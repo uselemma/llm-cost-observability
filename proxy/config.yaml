@@ -1,0 +1,33 @@
+model_list:
+  - model_name: "vercel_ai_gateway/*"
+    litellm_params:
+      model: "vercel_ai_gateway/*"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "vercel_ai_gateway/anthropic/*"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+
+  - model_name: "openai/*"
+    litellm_params:
+      model: "vercel_ai_gateway/openai/*"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+
+  - model_name: "xai/*"
+    litellm_params:
+      model: "vercel_ai_gateway/xai/*"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+
+  - model_name: "google/*"
+    litellm_params:
+      model: "vercel_ai_gateway/google/*"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+
+litellm_settings:
+  callbacks: clickhouse_logger.clickhouse_logger
+  drop_params: true
+  set_verbose: false
+
+general_settings:
+  custom_auth: auth.user_api_key_auth
