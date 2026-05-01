@@ -42,3 +42,34 @@ SELECT toDate(timestamp) AS day, count() AS rows
 FROM litellm_logs
 WHERE timestamp >= today() - 1
 GROUP BY day;
+
+-- TTFT by model (streaming only)
+SELECT model,
+       quantile(0.5)(ttft_ms) AS p50,
+       quantile(0.95)(ttft_ms) AS p95,
+       count() AS streams
+FROM litellm_logs
+WHERE timestamp >= now() - INTERVAL 1 DAY AND ttft_ms > 0
+GROUP BY model ORDER BY p95 DESC;
+
+-- Truncation rate by feature
+SELECT
+  arrayJoin(arrayFilter(t -> startsWith(t, 'feature:'), tags)) AS feature,
+  countIf(finish_reason = 'length') AS truncated,
+  count() AS total,
+  truncated / total AS truncation_rate
+FROM litellm_logs
+WHERE timestamp >= now() - INTERVAL 7 DAY AND status = 'success'
+GROUP BY feature HAVING total > 50 ORDER BY truncation_rate DESC;
+
+-- Anthropic cache effectiveness
+SELECT
+  model,
+  sum(cache_creation_tokens) AS writes,
+  sum(cache_read_tokens) AS reads,
+  reads / nullIf(writes, 0) AS read_to_write_ratio,
+  sum(spend_usd) AS spend
+FROM litellm_logs
+WHERE timestamp >= now() - INTERVAL 7 DAY
+  AND (cache_creation_tokens > 0 OR cache_read_tokens > 0)
+GROUP BY model;

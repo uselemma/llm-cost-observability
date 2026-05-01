@@ -36,8 +36,7 @@ services ──▶ LiteLLM proxy ──▶ Vercel AI Gateway ──▶ provider
 | [docker-compose.yml](docker-compose.yml) | Runs the proxy locally. No DB sidecars — auth is env-var, ClickHouse is Cloud. |
 | [sql/001_litellm_logs.sql](sql/001_litellm_logs.sql) | Table DDL. |
 | [sql/queries.sql](sql/queries.sql) | Spend-by-model, cost-per-prompt, p95-by-feature, etc. |
-| [client/llm_client/client.py](client/llm_client/client.py) | Python wrapper enforcing the tag schema. |
-| [scripts/smoke_test.py](scripts/smoke_test.py) | End-to-end check: send a chat call, verify a row lands in CH. |
+| [.claude/skills/](.claude/skills/) | Agent skills for integrating services and querying the data. |
 
 ## Setup (local dev and prod use the same path)
 
@@ -166,89 +165,57 @@ override for that model in the config.
 `env` is derived from the API key by the proxy's auth hook. Clients shouldn't
 include it — services in dev physically can't lie about being prod.
 
-### Python services
+### The contract
 
-```bash
-pip install ./client    # or publish from `client/` to your internal index
-```
+The proxy is OpenAI-compatible. Send standard chat-completion requests with
+two additions:
 
-```python
-import os
-from llm_client import LLMClient
+- **Auth.** `Authorization: Bearer ${LITELLM_API_KEY}` — the key whose env
+  half matches the service environment.
+- **Tags.** Add `metadata.tags` to the request body — an array of `key:value`
+  strings.
 
-os.environ["LITELLM_BASE_URL"] = "http://litellm-proxy.internal:4000"
-os.environ["LITELLM_API_KEY"] = "sk-...PROD..."
+A minimal request:
 
-llm = LLMClient()
+```json
+POST /v1/chat/completions
+Authorization: Bearer sk-...
 
-resp = llm.chat(
-    model="anthropic/claude-opus-4.6",
-    messages=[{"role": "user", "content": "..."}],
-    tags=["feature:summarization", "prompt:summarize-v3", "customer:acme"],
-)
-```
-
-The wrapper raises `TagValidationError` if `feature` or `prompt` are missing,
-or if any unknown tag key is passed.
-
-### TypeScript services (Vercel AI SDK)
-
-```ts
-// lib/llm.ts
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { LanguageModel } from 'ai';
-
-type Tags = {
-  feature: string;
-  prompt: string;
-  customer?: string;
-  experiment?: string;
-};
-
-function tagsToArray(t: Tags): string[] {
-  return Object.entries(t)
-    .filter(([, v]) => v != null && v !== '')
-    .map(([k, v]) => `${k}:${v}`);
-}
-
-function fetchWithTags(tags: Tags): typeof fetch {
-  const arr = tagsToArray(tags);
-  return async (input, init) => {
-    const body = init?.body ? JSON.parse(init.body as string) : {};
-    body.metadata = {
-      ...(body.metadata ?? {}),
-      tags: [...(body.metadata?.tags ?? []), ...arr],
-    };
-    return fetch(input, { ...init, body: JSON.stringify(body) });
-  };
-}
-
-export function llm(modelId: string, tags: Tags): LanguageModel {
-  const provider = createOpenAICompatible({
-    name: 'litellm',
-    baseURL: process.env.LITELLM_BASE_URL!,
-    apiKey: process.env.LITELLM_API_KEY!,
-    fetch: fetchWithTags(tags),
-  });
-  return provider(modelId);
+{
+  "model": "anthropic/claude-opus-4.6",
+  "messages": [{"role": "user", "content": "..."}],
+  "metadata": {
+    "tags": [
+      "feature:summarization",
+      "prompt:summarize-v3",
+      "customer:acme"
+    ]
+  }
 }
 ```
 
-Usage:
+Streaming (`"stream": true`) works identically; the logging callback fires
+exactly once at stream end, so you get one ClickHouse row either way.
 
-```ts
-import { generateText, streamText } from 'ai';
-import { llm } from '@/lib/llm';
+### Wrapping it
 
-const { text } = await generateText({
-  model: llm('anthropic/claude-opus-4.6', {
-    feature: 'summarization',
-    prompt: 'summarize-v3',
-    customer: 'acme',
-  }),
-  messages: [{ role: 'user', content: '...' }],
-});
-```
+Don't sprinkle raw HTTP calls. Build a thin wrapper per service (or per
+language) that:
+
+1. Reads `LITELLM_BASE_URL` and `LITELLM_API_KEY` from env.
+2. Takes a typed/validated `tags` argument with `feature` and `prompt`
+   required.
+3. Injects `metadata.tags` into the outgoing body.
+4. Otherwise passes through to whatever HTTP client or SDK the service
+   already uses (OpenAI SDK `extra_body`/`extraBody`, Vercel AI SDK with a
+   custom `fetch`, raw `fetch`/`requests`).
+
+The point is to make missing tags a compile-time or import-time error — a
+call without `feature:` and `prompt:` lands in ClickHouse with no
+attribution and becomes invisible in cost reports.
+
+For agent-driven implementation guidance, see the
+[llm-observability-integrate skill](.claude/skills/llm-observability-integrate/SKILL.md).
 
 ## Operations
 
