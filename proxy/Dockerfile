@@ -14,4 +14,5 @@ COPY config.yaml /app/config.yaml
 ENV PYTHONPATH=/app
 EXPOSE 4000
 
+ENTRYPOINT []
 CMD ["sh", "-c", "litellm --config /app/config.yaml --port 4000 --num_workers $(nproc)"]
