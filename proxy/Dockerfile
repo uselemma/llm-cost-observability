@@ -14,4 +14,4 @@ COPY config.yaml /app/config.yaml
 ENV PYTHONPATH=/app
 EXPOSE 4000
 
-CMD ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+CMD ["sh", "-c", "litellm --config /app/config.yaml --port 4000 --num_workers $(nproc)"]
