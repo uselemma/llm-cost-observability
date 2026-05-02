@@ -24,6 +24,12 @@ model_list:
       model: "vercel_ai_gateway/google/*"
       api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
 
+  - model_name: "google/gemini-embedding-2"
+    litellm_params:
+      model: "vercel_ai_gateway/google/gemini-embedding-2"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+      input_cost_per_token: 0.0000002 # $0.20 / 1M
+
 litellm_settings:
   callbacks: clickhouse_logger.clickhouse_logger
   drop_params: true
