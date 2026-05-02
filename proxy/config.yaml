@@ -1,29 +1,15 @@
 model_list:
-  - model_name: "vercel_ai_gateway/*"
+  # Universal passthrough: any "<provider>/<model>" string the client sends
+  # routes through Vercel AI Gateway with the same slug appended. Adding a
+  # new provider (moonshotai, deepseek, mistral, ...) requires no config
+  # change as long as Vercel supports it.
+  - model_name: "*"
     litellm_params:
       model: "vercel_ai_gateway/*"
       api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
 
-  - model_name: "anthropic/*"
-    litellm_params:
-      model: "vercel_ai_gateway/anthropic/*"
-      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
-
-  - model_name: "openai/*"
-    litellm_params:
-      model: "vercel_ai_gateway/openai/*"
-      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
-
-  - model_name: "xai/*"
-    litellm_params:
-      model: "vercel_ai_gateway/xai/*"
-      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
-
-  - model_name: "google/*"
-    litellm_params:
-      model: "vercel_ai_gateway/google/*"
-      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
-
+  # Per-model overrides for cost when the slug isn't in LiteLLM's pricing map
+  # yet. Matches before the wildcard.
   - model_name: "google/gemini-embedding-2"
     litellm_params:
       model: "vercel_ai_gateway/google/gemini-embedding-2"
