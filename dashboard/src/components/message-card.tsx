@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import JsonView from "@uiw/react-json-view";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,7 @@ type ContentBlock =
 
 export type Message = {
   role: Role;
-  content: string | ContentBlock[] | null;
+  content: string | ContentBlock[] | Record<string, unknown> | null;
   name?: string;
   tool_call_id?: string;
   tool_calls?: unknown;
@@ -25,6 +26,31 @@ const roleStyles: Record<string, string> = {
   user: "bg-sky-700 text-sky-50 hover:bg-sky-700",
   assistant: "bg-emerald-700 text-emerald-50 hover:bg-emerald-700",
   tool: "bg-violet-700 text-violet-50 hover:bg-violet-700",
+};
+
+const jsonViewTheme: React.CSSProperties & Record<string, string | number> = {
+  backgroundColor: "transparent",
+  fontSize: 11,
+  "--w-rjv-font-family": "var(--font-mono)",
+  "--w-rjv-background-color": "transparent",
+  "--w-rjv-line-color": "var(--border)",
+  "--w-rjv-arrow-color": "var(--muted-foreground)",
+  "--w-rjv-info-color": "var(--muted-foreground)",
+  "--w-rjv-color": "var(--foreground)",
+  "--w-rjv-key-string": "var(--foreground)",
+  "--w-rjv-curlybraces-color": "var(--muted-foreground)",
+  "--w-rjv-colon-color": "var(--muted-foreground)",
+  "--w-rjv-brackets-color": "var(--muted-foreground)",
+  "--w-rjv-type-string-color": "var(--foreground)",
+  "--w-rjv-type-int-color": "var(--muted-foreground)",
+  "--w-rjv-type-float-color": "var(--muted-foreground)",
+  "--w-rjv-type-bigint-color": "var(--muted-foreground)",
+  "--w-rjv-type-boolean-color": "var(--muted-foreground)",
+  "--w-rjv-type-date-color": "var(--muted-foreground)",
+  "--w-rjv-type-url-color": "var(--foreground)",
+  "--w-rjv-type-null-color": "var(--muted-foreground)",
+  "--w-rjv-type-nan-color": "var(--muted-foreground)",
+  "--w-rjv-type-undefined-color": "var(--muted-foreground)",
 };
 
 export default function MessageCard({
@@ -85,7 +111,7 @@ export default function MessageCard({
               <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Tool calls
               </h4>
-              <CodeBlock>{stringifyJson(message.tool_calls)}</CodeBlock>
+              <JsonBlock value={message.tool_calls} />
             </div>
           )}
         </CardContent>
@@ -97,6 +123,10 @@ export default function MessageCard({
 function ContentRenderer({ content }: { content: Message["content"] }) {
   if (content == null || content === "") {
     return <span className="text-xs italic text-muted-foreground">empty</span>;
+  }
+
+  if (typeof content === "object" && !Array.isArray(content)) {
+    return <JsonBlock value={content} />;
   }
 
   if (Array.isArray(content)) {
@@ -142,13 +172,13 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
       </div>
     );
   }
-  return <CodeBlock>{stringifyJson(block)}</CodeBlock>;
+  return <JsonBlock value={block} />;
 }
 
 function SmartText({ text }: { text: string }) {
   const parsed = tryJson(text);
   if (parsed !== undefined) {
-    return <CodeBlock>{stringifyJson(parsed)}</CodeBlock>;
+    return <JsonBlock value={parsed} />;
   }
   return (
     <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-foreground">
@@ -162,6 +192,25 @@ function CodeBlock({ children }: { children: string }) {
     <pre className="overflow-x-auto whitespace-pre-wrap break-words bg-muted p-2 font-mono text-[11px] leading-relaxed">
       {children}
     </pre>
+  );
+}
+
+function JsonBlock({ value }: { value: unknown }) {
+  if (typeof value !== "object" || value === null) {
+    return <CodeBlock>{stringifyJson(value)}</CodeBlock>;
+  }
+
+  return (
+    <div className="overflow-x-auto bg-muted p-2 text-xs">
+      <JsonView
+        value={value}
+        collapsed={2}
+        displayDataTypes={false}
+        displayObjectSize={false}
+        enableClipboard={false}
+        style={jsonViewTheme}
+      />
+    </div>
   );
 }
 

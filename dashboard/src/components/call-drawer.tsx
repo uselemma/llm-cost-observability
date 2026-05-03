@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import MessageCard, { type Message } from '@/components/message-card';
+import { parseApiTimestamp } from '@/lib/datetime';
 
 export default function CallDrawer({
   requestId,
@@ -41,7 +42,7 @@ export default function CallDrawer({
         {data && (
           <div className="space-y-5 px-6 pb-6">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-4">
-              <Stat label="Time" value={new Date(data.timestamp).toLocaleString()} />
+              <Stat label="Time" value={parseApiTimestamp(data.timestamp).toLocaleString()} />
               <Stat label="Status" value={data.status} />
               <Stat label="Finish" value={data.finish_reason || '—'} />
               <Stat label="Env" value={data.team || '—'} />
@@ -60,6 +61,16 @@ export default function CallDrawer({
                 ))}
               </div>
             )}
+
+            <Section title="Metadata">
+              <MessageCard
+                message={{
+                  role: 'metadata',
+                  content: data.metadata || null,
+                }}
+                defaultOpen={false}
+              />
+            </Section>
 
             {data.error_message && (
               <pre className="whitespace-pre-wrap border border-destructive/40 bg-destructive/10 p-3 text-[11px] text-destructive">
@@ -149,3 +160,4 @@ function safeJson(s: string): unknown {
     return s;
   }
 }
+

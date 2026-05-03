@@ -45,7 +45,7 @@ export default function Calls() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b px-4 py-3">
+      <header className="flex items-center justify-between border-b bg-muted px-4 py-3">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold tracking-tight">LLM call log</h1>
           {me.data?.env && (
@@ -98,5 +98,10 @@ export default function Calls() {
 
 function defaultSince(): string {
   const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 19);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day}T${h}:${min}`;
 }

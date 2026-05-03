@@ -3,6 +3,7 @@ import type { CallRow } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { parseApiTimestamp } from '@/lib/datetime';
 import {
   Table,
   TableBody,
@@ -88,7 +89,7 @@ export default function CallsTable({
 }
 
 function fmtTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseApiTimestamp(iso);
   return d.toLocaleString(undefined, {
     month: '2-digit',
     day: '2-digit',

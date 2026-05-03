@@ -63,7 +63,7 @@ export default function TagSelect({ value, onChange, fallbackTags = [] }: Props)
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-72 justify-between font-normal"
+            className="w-72 justify-between bg-background font-normal dark:bg-background"
           >
             <span className="truncate text-left">{summary}</span>
             <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />

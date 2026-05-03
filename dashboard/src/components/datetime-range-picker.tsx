@@ -20,10 +20,12 @@ export default function DateTimeRangePicker({
   since,
   until,
   onChange,
+  inline = false,
 }: {
   since: Iso;
   until: Iso;
   onChange: (next: { since: Iso; until: Iso }) => void;
+  inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -52,6 +54,46 @@ export default function DateTimeRangePicker({
 
   const summary = formatSummary(fromDate, toDate, fromTime, toTime);
 
+  const pickerContent = (
+    <>
+      <Calendar
+        mode="range"
+        numberOfMonths={2}
+        selected={{ from: fromDate, to: toDate }}
+        onSelect={setRange}
+        defaultMonth={fromDate}
+      />
+      <div className="grid grid-cols-2 gap-3 border-t p-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="from-time" className="text-xs text-muted-foreground">
+            From time
+          </Label>
+          <Input
+            id="from-time"
+            type="time"
+            value={fromTime}
+            onChange={(e) => setFromTime(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="to-time" className="text-xs text-muted-foreground">
+            To time
+          </Label>
+          <Input
+            id="to-time"
+            type="time"
+            value={toTime}
+            onChange={(e) => setToTime(e.target.value)}
+          />
+        </div>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return <div className="w-auto p-0">{pickerContent}</div>;
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -61,37 +103,7 @@ export default function DateTimeRangePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="range"
-          numberOfMonths={2}
-          selected={{ from: fromDate, to: toDate }}
-          onSelect={setRange}
-          defaultMonth={fromDate}
-        />
-        <div className="grid grid-cols-2 gap-3 border-t p-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="from-time" className="text-xs text-muted-foreground">
-              From time
-            </Label>
-            <Input
-              id="from-time"
-              type="time"
-              value={fromTime}
-              onChange={(e) => setFromTime(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="to-time" className="text-xs text-muted-foreground">
-              To time
-            </Label>
-            <Input
-              id="to-time"
-              type="time"
-              value={toTime}
-              onChange={(e) => setToTime(e.target.value)}
-            />
-          </div>
-        </div>
+        {pickerContent}
       </PopoverContent>
     </Popover>
   );

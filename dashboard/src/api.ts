@@ -75,6 +75,10 @@ export const api = {
       if (Array.isArray(v)) {
         v.forEach((item) => usp.append(k, String(item)));
       } else {
+        if ((k === 'since' || k === 'until') && typeof v === 'string') {
+          usp.set(k, normalizeDateTimeParam(v));
+          return;
+        }
         usp.set(k, String(v));
       }
     });
@@ -86,3 +90,8 @@ export const api = {
 };
 
 export { ApiError };
+
+function normalizeDateTimeParam(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
