@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.cache
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/.env
+**/.env.local
+**/.git
+**/.DS_Store
+.git
+.github
+README.md

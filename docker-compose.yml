@@ -1,6 +1,8 @@
 services:
   litellm:
-    build: ./proxy
+    build:
+      context: .
+      dockerfile: Dockerfile
     # Override the Dockerfile's $(nproc) so local dev uses 1 worker.
     command: ["sh", "-c", "litellm --config /app/config.yaml --port 4000 --num_workers 1"]
     environment:
@@ -12,5 +14,6 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-default}
       CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-true}
+      DASHBOARD_COOKIE_SECURE: ${DASHBOARD_COOKIE_SECURE:-false}  # local dev = false
     ports:
       - "4000:4000"
