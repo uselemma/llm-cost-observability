@@ -22,6 +22,7 @@ import hmac
 import os
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 import clickhouse_connect
@@ -139,6 +140,24 @@ LIST_COLUMNS = [
 ]
 
 
+def _parse_query_datetime(value: str, field: str) -> str:
+    """Parse incoming datetime query params into ClickHouse-safe timestamps.
+
+    Accepts minute-level strings like `YYYY-MM-DDTHH:mm` from the dashboard
+    picker, plus full ISO datetimes.
+    """
+    try:
+        dt = datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid {field} datetime, expected ISO format",
+        )
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
 @router.get("/calls")
 async def list_calls(
     request: Request,
@@ -160,13 +179,13 @@ async def list_calls(
 
     if since:
         where.append("timestamp >= {since:DateTime64(3)}")
-        params["since"] = since
+        params["since"] = _parse_query_datetime(since, "since")
     else:
         where.append("timestamp >= now() - INTERVAL 24 HOUR")
 
     if until:
         where.append("timestamp <= {until:DateTime64(3)}")
-        params["until"] = until
+        params["until"] = _parse_query_datetime(until, "until")
     if model:
         where.append("model = {model:String}")
         params["model"] = model
@@ -205,7 +224,11 @@ async def list_calls(
     result = client.query(sql, parameters=params)
     rows = [dict(zip(result.column_names, row)) for row in result.result_rows]
     for r in rows:
-        r["timestamp"] = r["timestamp"].isoformat()
+        r["timestamp"] = (
+            r["timestamp"].replace(tzinfo=timezone.utc).isoformat()
+            if r.get("timestamp") is not None
+            else None
+        )
     return {"rows": rows, "limit": limit, "offset": offset}
 
 
@@ -222,7 +245,11 @@ async def get_call(
     if not result.result_rows:
         raise HTTPException(status_code=404, detail="not found")
     row = dict(zip(result.column_names, result.result_rows[0]))
-    row["timestamp"] = row["timestamp"].isoformat()
+    row["timestamp"] = (
+        row["timestamp"].replace(tzinfo=timezone.utc).isoformat()
+        if row.get("timestamp") is not None
+        else None
+    )
     return row
 
 
