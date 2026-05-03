@@ -38,10 +38,12 @@ async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
     if env is None:
         raise HTTPException(status_code=401, detail="invalid api key")
 
-    # Note: env is stamped server-side via team_alias and read back by the
-    # ClickHouse logger. Setting metadata.tags here would clobber the
-    # client's request-level tags during LiteLLM's metadata merge.
+    # `env` is stamped server-side via team_alias and read back by the
+    # ClickHouse logger.
+    # `allow_client_tags=True` opts this key into accepting client-supplied
+    # `metadata.tags` — without it, LiteLLM silently strips them.
     return UserAPIKeyAuth(
         api_key=token,
         team_alias=env,
+        metadata={"allow_client_tags": True},
     )
