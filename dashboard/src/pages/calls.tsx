@@ -44,8 +44,8 @@ export default function Calls() {
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b bg-muted px-4 py-3">
+    <div className="flex h-full flex-col bg-background">
+      <header className="flex items-center justify-between border-b bg-background px-4 py-3">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold tracking-tight">LLM call log</h1>
           {me.data?.env && (
@@ -76,7 +76,7 @@ export default function Calls() {
       <FilterBar filters={filters} onChange={setFilters} availableTags={availableTags} />
       <Separator />
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden bg-muted">
         {error ? (
           <div className="p-4 text-sm text-destructive">Failed to load: {(error as Error).message}</div>
         ) : (

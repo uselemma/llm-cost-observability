@@ -33,18 +33,18 @@ export default function CallsTable({
     return <div className="p-4 text-sm text-muted-foreground">No calls in this window.</div>;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-muted">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="sticky top-0 z-20 w-[160px] bg-background">Time</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[260px] bg-background">Tags</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[240px] bg-background">Model</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[100px] bg-background">Status</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[100px] bg-background text-right">Cost</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[140px] bg-background text-right">Tokens</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[80px] bg-background text-right">ms</TableHead>
-            <TableHead className="sticky top-0 z-20 bg-background">Output preview</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[160px] bg-muted">Time</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[260px] bg-muted">Tags</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[240px] bg-muted">Model</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-muted">Status</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-muted text-right">Cost</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Tokens</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[80px] bg-muted text-right">ms</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -73,7 +73,7 @@ export default function CallsTable({
         </TableBody>
       </Table>
 
-      <div className="flex items-center justify-center gap-3 border-t bg-background/80 px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex items-center justify-center gap-3 border-t bg-muted px-4 py-3 text-xs text-muted-foreground">
         <span className="tabular-nums">{rows.length} rows</span>
         {hasMore ? (
           <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>

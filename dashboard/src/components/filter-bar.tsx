@@ -72,7 +72,7 @@ export default function FilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 bg-muted px-4 py-3">
+    <div className="flex flex-wrap items-end gap-3 bg-background px-4 py-3">
       <Field label="Range" htmlFor="range">
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
