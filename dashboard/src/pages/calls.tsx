@@ -61,7 +61,7 @@ export default function Calls() {
             Refresh
           </Button>
           <Button
-            variant="ghost"
+            variant="destructive"
             size="sm"
             onClick={async () => {
               await api.logout();
