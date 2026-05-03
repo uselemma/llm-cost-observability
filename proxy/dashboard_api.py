@@ -21,10 +21,11 @@ import hashlib
 import hmac
 import os
 import time
+from collections import defaultdict
 from typing import Any
 
 import clickhouse_connect
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -146,7 +147,7 @@ async def list_calls(
     until: str | None = None,
     model: str | None = None,
     status: str | None = None,
-    tag: str | None = None,
+    tag: list[str] = Query(default_factory=list),
     q: str | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -173,8 +174,19 @@ async def list_calls(
         where.append("status = {status:String}")
         params["status"] = status
     if tag:
-        where.append("has(tags, {tag:String})")
-        params["tag"] = tag
+        # Group selected tags by their key (prefix before first ':').
+        # OR within a key, AND across keys.
+        groups: dict[str, list[str]] = defaultdict(list)
+        for t in tag:
+            key, _, _ = t.partition(":")
+            groups[key].append(t)
+        for i, vals in enumerate(groups.values()):
+            ors: list[str] = []
+            for j, v in enumerate(vals):
+                pname = f"tag_{i}_{j}"
+                ors.append(f"has(tags, {{{pname}:String}})")
+                params[pname] = v
+            where.append("(" + " OR ".join(ors) + ")")
     if q:
         where.append("(positionCaseInsensitive(output_text, {q:String}) > 0 OR positionCaseInsensitive(input_messages, {q:String}) > 0)")
         params["q"] = q
@@ -212,6 +224,24 @@ async def get_call(
     row = dict(zip(result.column_names, result.result_rows[0]))
     row["timestamp"] = row["timestamp"].isoformat()
     return row
+
+
+@router.get("/tags")
+async def list_tags(session: dict[str, Any] = Depends(_require_session)) -> dict[str, Any]:
+    client = _ch_client()
+    result = client.query(
+        """
+        SELECT DISTINCT t
+        FROM litellm_logs
+        ARRAY JOIN tags AS t
+        WHERE timestamp >= now() - INTERVAL 7 DAY
+          AND team = {env:String}
+          AND NOT startsWith(t, 'env:')
+        ORDER BY t
+        """,
+        parameters={"env": session["env"]},
+    )
+    return {"tags": [r[0] for r in result.result_rows]}
 
 
 @router.get("/models")
