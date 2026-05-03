@@ -1,5 +1,8 @@
+import { Loader2 } from 'lucide-react';
 import type { CallRow } from '@/api';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -13,27 +16,34 @@ export default function CallsTable({
   rows,
   onSelect,
   loading,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   rows: CallRow[];
   onSelect: (id: string) => void;
   loading: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   if (loading) return <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
   if (rows.length === 0)
     return <div className="p-4 text-sm text-muted-foreground">No calls in this window.</div>;
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="flex h-full flex-col">
       <Table>
-        <TableHeader className="sticky top-0 bg-background">
+        <TableHeader>
           <TableRow>
-            <TableHead className="w-[160px]">Time</TableHead>
-            <TableHead className="w-[260px]">Model</TableHead>
-            <TableHead className="w-[100px]">Status</TableHead>
-            <TableHead className="w-[100px] text-right">Cost</TableHead>
-            <TableHead className="w-[140px] text-right">Tokens</TableHead>
-            <TableHead className="w-[80px] text-right">ms</TableHead>
-            <TableHead>Output preview</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[160px] bg-background">Time</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[260px] bg-background">Tags</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[240px] bg-background">Model</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-background">Status</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-background text-right">Cost</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[140px] bg-background text-right">Tokens</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[80px] bg-background text-right">ms</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-background">Output preview</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -46,6 +56,7 @@ export default function CallsTable({
               <TableCell className="tabular-nums text-muted-foreground">
                 {fmtTime(r.timestamp)}
               </TableCell>
+              <TableCell><TagPills tags={r.tags} /></TableCell>
               <TableCell className="truncate font-mono text-xs">{r.model}</TableCell>
               <TableCell>{statusBadge(r.status, r.finish_reason)}</TableCell>
               <TableCell className="text-right tabular-nums">${r.spend_usd.toFixed(5)}</TableCell>
@@ -60,6 +71,18 @@ export default function CallsTable({
           ))}
         </TableBody>
       </Table>
+
+      <div className="flex items-center justify-center gap-3 border-t bg-background/80 px-4 py-3 text-xs text-muted-foreground">
+        <span className="tabular-nums">{rows.length} rows</span>
+        {hasMore ? (
+          <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore && <Loader2 className="animate-spin" />}
+            Load more
+          </Button>
+        ) : (
+          <span>End of results</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -75,9 +98,25 @@ function fmtTime(iso: string): string {
   });
 }
 
+function TagPills({ tags }: { tags: string[] }) {
+  // Hide env:* (already known per-session); surface feature/prompt/customer/experiment.
+  const visible = tags.filter((t) => !t.startsWith('env:'));
+  if (visible.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {visible.map((t) => (
+        <Badge key={t} variant="outline" className="font-mono text-[10px]">
+          {t}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 function statusBadge(status: string, finish: string) {
-  if (status === 'failure') return <Badge variant="destructive">failure</Badge>;
+  const base = 'font-mono text-[10px] uppercase tracking-wider';
+  if (status === 'failure') return <Badge className={cn(base, 'bg-red-700 text-red-50 hover:bg-red-700')}>failure</Badge>;
   if (finish === 'length')
-    return <Badge variant="outline" className="border-amber-600 text-amber-600">truncated</Badge>;
-  return <Badge variant="secondary">{status}</Badge>;
+    return <Badge className={cn(base, 'bg-amber-600 text-amber-50 hover:bg-amber-600')}>truncated</Badge>;
+  return <Badge className={cn(base, 'bg-emerald-700 text-emerald-50 hover:bg-emerald-700')}>{status}</Badge>;
 }

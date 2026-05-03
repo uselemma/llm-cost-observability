@@ -9,6 +9,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import MessageCard, { type Message } from '@/components/message-card';
 
 export default function CallDrawer({
   requestId,
@@ -22,21 +23,23 @@ export default function CallDrawer({
     queryFn: () => api.getCall(requestId),
   });
 
+  const inputMessages = data ? parseMessages(data.input_messages) : [];
+
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-[min(900px,95vw)] overflow-y-auto sm:max-w-none">
-        <SheetHeader>
+      <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-3xl">
+        <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="text-base">{data?.model ?? 'Call'}</SheetTitle>
           <SheetDescription className="font-mono text-xs">{requestId}</SheetDescription>
         </SheetHeader>
 
-        {isPending && <div className="mt-4 text-sm text-muted-foreground">Loading…</div>}
+        {isPending && <div className="px-6 pb-6 text-sm text-muted-foreground">Loading…</div>}
         {error && (
-          <div className="mt-4 text-sm text-destructive">Error: {(error as Error).message}</div>
+          <div className="px-6 pb-6 text-sm text-destructive">Error: {(error as Error).message}</div>
         )}
 
         {data && (
-          <div className="mt-4 space-y-5">
+          <div className="space-y-5 px-6 pb-6">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-4">
               <Stat label="Time" value={new Date(data.timestamp).toLocaleString()} />
               <Stat label="Status" value={data.status} />
@@ -59,7 +62,7 @@ export default function CallDrawer({
             )}
 
             {data.error_message && (
-              <pre className="whitespace-pre-wrap rounded-md border border-destructive/40 bg-destructive/10 p-3 text-[11px] text-destructive">
+              <pre className="whitespace-pre-wrap border border-destructive/40 bg-destructive/10 p-3 text-[11px] text-destructive">
                 {data.error_message}
               </pre>
             )}
@@ -67,24 +70,38 @@ export default function CallDrawer({
             <Separator />
 
             <Section title="Input">
-              <Pre>{prettyJson(data.input_messages)}</Pre>
+              {inputMessages.length === 0 ? (
+                <pre className="bg-muted p-3 font-mono text-[11px]">{data.input_messages}</pre>
+              ) : (
+                <div className="space-y-2">
+                  {inputMessages.map((m, i) => (
+                    <MessageCard key={i} message={m} />
+                  ))}
+                </div>
+              )}
             </Section>
 
-            {data.output_text && (
+            {(data.output_text || data.reasoning_content || data.tool_calls) && (
               <Section title="Output">
-                <Pre prose>{data.output_text}</Pre>
-              </Section>
-            )}
-
-            {data.reasoning_content && (
-              <Section title="Reasoning">
-                <Pre prose>{data.reasoning_content}</Pre>
-              </Section>
-            )}
-
-            {data.tool_calls && (
-              <Section title="Tool calls">
-                <Pre>{prettyJson(data.tool_calls)}</Pre>
+                <div className="space-y-2">
+                  <MessageCard
+                    message={{
+                      role: 'assistant',
+                      content: data.output_text || null,
+                      tool_calls: data.tool_calls ? safeJson(data.tool_calls) : undefined,
+                    }}
+                  />
+                  {data.reasoning_content && (
+                    <div>
+                      <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Reasoning
+                      </h4>
+                      <pre className="whitespace-pre-wrap break-words bg-muted p-3 text-[12px]">
+                        {data.reasoning_content}
+                      </pre>
+                    </div>
+                  )}
+                </div>
               </Section>
             )}
           </div>
@@ -114,23 +131,20 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Pre({ children, prose = false }: { children: string; prose?: boolean }) {
-  return (
-    <pre
-      className={
-        prose
-          ? 'whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-[12px]'
-          : 'whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-[11px]'
-      }
-    >
-      {children}
-    </pre>
-  );
+function parseMessages(raw: string): Message[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (Array.isArray(v)) return v as Message[];
+    return [];
+  } catch {
+    return [];
+  }
 }
 
-function prettyJson(s: string): string {
+function safeJson(s: string): unknown {
   try {
-    return JSON.stringify(JSON.parse(s), null, 2);
+    return JSON.parse(s);
   } catch {
     return s;
   }

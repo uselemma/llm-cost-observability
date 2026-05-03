@@ -20,7 +20,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
           e.preventDefault();
           m.mutate(secret);
         }}
-        className="w-full max-w-sm space-y-5 rounded-lg border bg-card p-6 shadow-sm"
+        className="w-full max-w-sm space-y-5 border bg-card p-6"
       >
         <div className="space-y-1">
           <h1 className="text-lg font-semibold tracking-tight">LLM call log</h1>

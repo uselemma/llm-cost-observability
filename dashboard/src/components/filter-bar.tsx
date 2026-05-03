@@ -9,13 +9,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import TagSelect from '@/components/tag-select';
+import DateTimeRangePicker from '@/components/datetime-range-picker';
 
 export type Filters = {
   since?: string;
   until?: string;
   model?: string;
   status?: string;
-  tag?: string;
+  tag?: string[];
   q?: string;
 };
 
@@ -24,9 +26,11 @@ const ALL = '__all__';
 export default function FilterBar({
   filters,
   onChange,
+  availableTags,
 }: {
   filters: Filters;
   onChange: (f: Filters) => void;
+  availableTags?: string[];
 }) {
   const models = useQuery({ queryKey: ['models'], queryFn: api.listModels });
 
@@ -36,13 +40,11 @@ export default function FilterBar({
 
   return (
     <div className="flex flex-wrap items-end gap-3 px-4 py-3">
-      <Field label="Since" htmlFor="since">
-        <Input
-          id="since"
-          type="datetime-local"
-          value={filters.since ?? ''}
-          onChange={(e) => set('since', e.target.value)}
-          className="h-9 w-52"
+      <Field label="Range" htmlFor="range">
+        <DateTimeRangePicker
+          since={filters.since}
+          until={filters.until}
+          onChange={({ since, until }) => onChange({ ...filters, since, until })}
         />
       </Field>
       <Field label="Model" htmlFor="model">
@@ -50,7 +52,7 @@ export default function FilterBar({
           value={filters.model ?? ALL}
           onValueChange={(v) => set('model', v === ALL ? undefined : v)}
         >
-          <SelectTrigger id="model" className="h-9 w-64">
+          <SelectTrigger id="model" className="w-64">
             <SelectValue placeholder="All models" />
           </SelectTrigger>
           <SelectContent>
@@ -68,7 +70,7 @@ export default function FilterBar({
           value={filters.status ?? ALL}
           onValueChange={(v) => set('status', v === ALL ? undefined : v)}
         >
-          <SelectTrigger id="status" className="h-9 w-32">
+          <SelectTrigger id="status" className="w-32">
             <SelectValue placeholder="Any" />
           </SelectTrigger>
           <SelectContent>
@@ -78,13 +80,11 @@ export default function FilterBar({
           </SelectContent>
         </Select>
       </Field>
-      <Field label="Tag" htmlFor="tag">
-        <Input
-          id="tag"
-          placeholder="feature:summarization"
-          value={filters.tag ?? ''}
-          onChange={(e) => set('tag', e.target.value)}
-          className="h-9 w-56"
+      <Field label="Tags" htmlFor="tags">
+        <TagSelect
+          value={filters.tag ?? []}
+          onChange={(next) => set('tag', next.length ? next : undefined)}
+          fallbackTags={availableTags}
         />
       </Field>
       <Field label="Search bodies" htmlFor="q">
@@ -93,7 +93,7 @@ export default function FilterBar({
           placeholder="substring of input or output"
           value={filters.q ?? ''}
           onChange={(e) => set('q', e.target.value)}
-          className="h-9 w-72"
+          className="w-72"
         />
       </Field>
     </div>

@@ -40,7 +40,7 @@ export type CallsListParams = {
   until?: string;
   model?: string;
   status?: string;
-  tag?: string;
+  tag?: string[];
   q?: string;
   limit?: number;
   offset?: number;
@@ -71,12 +71,18 @@ export const api = {
   listCalls: (params: CallsListParams) => {
     const usp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) usp.set(k, String(v));
+      if (v == null || v === '') return;
+      if (Array.isArray(v)) {
+        v.forEach((item) => usp.append(k, String(item)));
+      } else {
+        usp.set(k, String(v));
+      }
     });
     return request<{ rows: CallRow[]; limit: number; offset: number }>(`/api/calls?${usp}`);
   },
   getCall: (id: string) => request<CallDetail>(`/api/calls/${encodeURIComponent(id)}`),
   listModels: () => request<{ models: string[] }>('/api/models'),
+  listTags: () => request<{ tags: string[] }>('/api/tags'),
 };
 
 export { ApiError };
