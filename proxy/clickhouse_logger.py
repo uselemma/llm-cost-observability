@@ -89,6 +89,32 @@ class ClickHouseLogger(CustomLogger):
             usage = _get(response_obj, "usage") or {}
             litellm_md = (kwargs.get("litellm_params") or {}).get("metadata") or {}
             proxy_md = kwargs.get("metadata") or {}
+            requester_md = (
+                litellm_md.get("requester_metadata")
+                if isinstance(litellm_md, dict)
+                else {}
+            )
+            body_md = (
+                (((kwargs.get("proxy_server_request") or {}).get("body") or {}).get("metadata"))
+                or {}
+            )
+            if not isinstance(proxy_md, dict):
+                proxy_md = {}
+            if not isinstance(body_md, dict):
+                body_md = {}
+            if not isinstance(requester_md, dict):
+                requester_md = {}
+            # Caller-supplied request metadata is normalized by LiteLLM into
+            # `litellm_params.metadata.requester_metadata`.
+            # Prefer the request-body snapshot when available so we persist only
+            # client-provided metadata and not extra proxy-populated fields.
+            stored_metadata = body_md or requester_md or proxy_md
+            if isinstance(stored_metadata, dict):
+                stored_metadata = {
+                    k: v
+                    for k, v in stored_metadata.items()
+                    if k != "headers" and not k.startswith("user_api_key_")
+                }
             optional_params = kwargs.get("optional_params") or {}
 
             # Token usage — handle both flat and nested-details shapes.
@@ -149,7 +175,9 @@ class ClickHouseLogger(CustomLogger):
             )
 
             # Tags — auth stamps env via team_alias; union with client tags.
-            client_tags = proxy_md.get("tags") or litellm_md.get("tags") or []
+            client_tags = (
+                requester_md.get("tags") or proxy_md.get("tags") or litellm_md.get("tags") or []
+            )
             if not isinstance(client_tags, list):
                 client_tags = []
             team = litellm_md.get("user_api_key_team_alias", "") or ""
@@ -186,7 +214,7 @@ class ClickHouseLogger(CustomLogger):
                 optional_params.get("max_tokens") or optional_params.get("max_completion_tokens"),
                 optional_params.get("presence_penalty"),
                 tags,
-                json.dumps(proxy_md, default=str),
+                json.dumps(stored_metadata, default=str),
                 input_messages,
                 output_text,
                 reasoning_content,
