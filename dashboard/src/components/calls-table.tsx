@@ -139,7 +139,7 @@ function TagPills({ tags }: { tags: string[] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {visible.map((t) => (
-        <Badge key={t} variant="outline" className="font-mono text-[10px]">
+        <Badge key={t} variant="secondary" className="font-mono text-[10px]">
           {t}
         </Badge>
       ))}
