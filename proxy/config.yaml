@@ -1,4 +1,31 @@
 model_list:
+  # ----- Fireworks AI routes. Use `fireworks/<model-id>` from clients; LiteLLM
+  # expands that to Fireworks' `accounts/fireworks/models/<model-id>` path.
+
+  - model_name: "fireworks/kimi-k2p6"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/kimi-k2p6"
+      api_key: os.environ/FIREWORKS_AI_API_KEY
+      input_cost_per_token: 0.00000095      # $0.95 / 1M
+      output_cost_per_token: 0.000004       # $4.00 / 1M
+      cache_read_input_token_cost: 0.00000016  # $0.16 / 1M
+      allowed_openai_params: ["thinking", "reasoning_effort"]
+
+  - model_name: "fireworks/kimi-k2p5"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
+      api_key: os.environ/FIREWORKS_AI_API_KEY
+      input_cost_per_token: 0.0000006       # $0.60 / 1M
+      output_cost_per_token: 0.000003       # $3.00 / 1M
+      cache_read_input_token_cost: 0.0000001   # $0.10 / 1M
+      allowed_openai_params: ["thinking", "reasoning_effort"]
+
+  - model_name: "fireworks/*"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/*"
+      api_key: os.environ/FIREWORKS_AI_API_KEY
+      allowed_openai_params: ["thinking", "reasoning_effort"]
+
   - model_name: "*"
     litellm_params:
       model: "vercel_ai_gateway/*"
@@ -64,7 +91,7 @@ model_list:
       cache_creation_input_token_cost: 0.00000375  # $3.75 / 1M
 
 litellm_settings:
-  callbacks: proxy.clickhouse_logger.clickhouse_logger
+  callbacks: clickhouse_logger.clickhouse_logger
   # drop_params: true would silently strip provider-specific params like
   # `thinking` (Anthropic) and `reasoning_effort` (o-series), which kills
   # reasoning streaming. Keep false so those pass through.
@@ -72,4 +99,4 @@ litellm_settings:
   set_verbose: false
 
 general_settings:
-  custom_auth: proxy.auth.user_api_key_auth
+  custom_auth: auth.user_api_key_auth

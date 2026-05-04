@@ -27,9 +27,9 @@ language and HTTP/SDK style fits the service you're working in.
    key. The proxy stamps the matching `env:dev` or `env:prod` tag onto every
    row from that key, so a service physically can't lie about its env.
 3. **Model name.** Pass either the short form `<provider>/<model>` (e.g.
-   `anthropic/claude-opus-4.6`, `openai/gpt-4.1`) or the full slug
-   `vercel_ai_gateway/<provider>/<model>`. A bare model name without a
-   provider prefix won't route.
+   `anthropic/claude-opus-4.6`, `openai/gpt-4.1`, `fireworks/kimi-k2p6`) or
+   the full Vercel slug `vercel_ai_gateway/<provider>/<model>`. A bare model
+   name without a provider prefix won't route.
 4. **Tags.** Add `metadata.tags` to the request body — an array of
    `key:value` strings. `feature` and `prompt` are required; `customer` and
    `experiment` are optional; `env` is **server-stamped, do not set**.
@@ -138,7 +138,9 @@ The proxy wildcard-routes any Vercel AI Gateway model. Two equivalent forms:
 - `anthropic/claude-opus-4.6` ← short, recommended
 - `vercel_ai_gateway/anthropic/claude-opus-4.6` ← full slug
 
-Same patterns for `openai/`, `xai/`, `google/`. See [proxy/config.yaml](../../proxy/config.yaml).
+Same patterns for `openai/`, `xai/`, `google/`. Fireworks-hosted models use
+the `fireworks/` prefix, e.g. `fireworks/kimi-k2p6`. See
+[proxy/config.yaml](../../proxy/config.yaml).
 
 Cost is computed automatically for any model in [LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
 For models too new to be in the map, `spend_usd` will be 0 — flag that to the

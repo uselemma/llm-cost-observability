@@ -1,6 +1,6 @@
 # llm-cost-observability
 
-LiteLLM proxy in front of Vercel AI Gateway, logging every request to a
+LiteLLM proxy in front of Vercel AI Gateway and Fireworks AI, logging every request to a
 ClickHouse table.
 
 The point: every LLM call your services make gets a row in ClickHouse with
@@ -12,6 +12,7 @@ in SQL.
 
 ```
 services ──▶ LiteLLM proxy ──▶ Vercel AI Gateway ──▶ provider
+                         └──▶ Fireworks AI
               │
               └── async insert ──▶ ClickHouse Cloud
 ```
@@ -29,7 +30,7 @@ services ──▶ LiteLLM proxy ──▶ Vercel AI Gateway ──▶ provider
 
 | Path | Purpose |
 |------|---------|
-| [proxy/config.yaml](proxy/config.yaml) | LiteLLM model list + auth wiring. Wildcard-routes any Vercel AI Gateway model. |
+| [proxy/config.yaml](proxy/config.yaml) | LiteLLM model list + auth wiring. Wildcard-routes Vercel AI Gateway models and Fireworks AI model IDs. |
 | [proxy/auth.py](proxy/auth.py) | Static-keys auth hook. Parses `LITELLM_KEYS` env var. |
 | [proxy/clickhouse_logger.py](proxy/clickhouse_logger.py) | `CustomLogger` callback that writes to ClickHouse. Async insert, swallows errors so a CH outage can't break LLM traffic. |
 | [proxy/Dockerfile](proxy/Dockerfile) | Extends `litellm:main-stable`, adds `uv`-installed deps. |
@@ -57,6 +58,7 @@ Fill in:
 LITELLM_KEYS="sk-...:dev,sk-...:prod"
 
 VERCEL_AI_GATEWAY_API_KEY=...
+FIREWORKS_AI_API_KEY=...          # required for fireworks/* routes
 
 CLICKHOUSE_HOST=<your-instance>.clickhouse.cloud
 CLICKHOUSE_PORT=8443                # HTTPS port for clickhouse-connect
@@ -145,6 +147,13 @@ use either form:
 - `vercel_ai_gateway/anthropic/claude-opus-4.6` ← full slug
 
 Same patterns for `openai/`, `xai/`, `google/`. See [proxy/config.yaml](proxy/config.yaml).
+
+Fireworks AI routes use the `fireworks/` prefix and map to Fireworks' hosted
+`accounts/fireworks/models/<model-id>` names:
+
+- `fireworks/kimi-k2p6`
+- `fireworks/kimi-k2p5`
+- `fireworks/<any-fireworks-model-id>`
 
 Cost is computed automatically for any model in
 [LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
