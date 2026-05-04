@@ -95,6 +95,14 @@ export default function CallDrawer({
             {(data.output_text || data.reasoning_content || data.tool_calls) && (
               <Section title="Output">
                 <div className="space-y-2">
+                  {data.reasoning_content && (
+                    <MessageCard
+                      message={{
+                        role: 'reasoning',
+                        content: data.reasoning_content,
+                      }}
+                    />
+                  )}
                   <MessageCard
                     message={{
                       role: 'assistant',
@@ -102,16 +110,6 @@ export default function CallDrawer({
                       tool_calls: data.tool_calls ? safeJson(data.tool_calls) : undefined,
                     }}
                   />
-                  {data.reasoning_content && (
-                    <div>
-                      <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Reasoning
-                      </h4>
-                      <pre className="whitespace-pre-wrap break-words bg-muted p-3 text-[12px]">
-                        {data.reasoning_content}
-                      </pre>
-                    </div>
-                  )}
                 </div>
               </Section>
             )}

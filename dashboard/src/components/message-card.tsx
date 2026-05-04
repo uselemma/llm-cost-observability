@@ -64,6 +64,7 @@ export default function MessageCard({
   const [open, setOpen] = useState(initial);
   const cls = roleStyles[message.role] ?? "bg-muted text-foreground";
   const preview = previewOf(message.content);
+  const hasToolCalls = message.tool_calls != null;
 
   return (
     <Card size="sm" className="gap-0 gap-3!">
@@ -105,8 +106,13 @@ export default function MessageCard({
       </CardHeader>
       {open && (
         <CardContent className="space-y-3 border-t px-3 pt-3">
-          <ContentRenderer content={message.content} />
-          {message.tool_calls != null && (
+          {hasRenderableContent(message.content) && (
+            <ContentRenderer content={message.content} />
+          )}
+          {!hasRenderableContent(message.content) && !hasToolCalls && (
+            <ContentRenderer content={message.content} />
+          )}
+          {hasToolCalls && (
             <div>
               <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Tool calls
@@ -140,6 +146,10 @@ function ContentRenderer({ content }: { content: Message["content"] }) {
   }
 
   return <SmartText text={content} />;
+}
+
+function hasRenderableContent(content: Message["content"]): boolean {
+  return content != null && content !== "";
 }
 
 function ContentBlockRenderer({ block }: { block: ContentBlock }) {
