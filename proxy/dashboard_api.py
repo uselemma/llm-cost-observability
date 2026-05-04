@@ -7,8 +7,10 @@ Routes:
     GET  /api/calls/{request_id}          — single row, including bodies
 
 Static:
-    GET  /dashboard/                      — SPA index.html
-    GET  /dashboard/assets/*              — built SPA assets
+    GET  /                               — SPA index.html, replacing LiteLLM's default UI
+    GET  /assets/*                       — built SPA assets
+    GET  /ui/*                           — compatibility route for LiteLLM UI links
+    GET  /dashboard/*                    — compatibility route for old dashboard links
 
 Auth: any secret from LITELLM_KEYS works as a login. The matched env (dev/prod)
 is stamped into the session token so /api/calls auto-scopes to that env —
@@ -27,8 +29,9 @@ from typing import Any
 
 import clickhouse_connect
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import BaseRoute
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel
 
@@ -283,20 +286,57 @@ async def list_models(session: dict[str, Any] = Depends(_require_session)) -> di
 
 # --- Mount on the LiteLLM app -----------------------------------------------
 
+def _remove_litellm_default_ui_routes(routes: list[BaseRoute]) -> None:
+    """Let the custom dashboard own root while leaving API routes untouched."""
+    routes[:] = [
+        route
+        for route in routes
+        if not _is_litellm_default_ui_route(route)
+    ]
+
+
+def _is_litellm_default_ui_route(route: BaseRoute) -> bool:
+    path = getattr(route, "path", None)
+    if path is None:
+        return False
+    methods = getattr(route, "methods", set()) or set()
+    if path == "/" and (methods & {"GET", "HEAD"}):
+        return True
+    return path == "/ui" or path.startswith("/ui/")
+
+
 if proxy_app is not None:
     proxy_app.include_router(router)
 
     if os.path.isdir(DASHBOARD_DIST):
-        # Serve assets at /dashboard/assets/*
+        _remove_litellm_default_ui_routes(proxy_app.router.routes)
+
+        # Serve assets at /assets/* for the root-mounted SPA.
         proxy_app.mount(
-            "/dashboard/assets",
+            "/assets",
             StaticFiles(directory=os.path.join(DASHBOARD_DIST, "assets")),
-            name="dashboard_assets",
+            name="dashboard_assets_root",
         )
 
-        # SPA fallback — anything under /dashboard/* serves index.html
+        # Keep old /dashboard links working after the dashboard moved to root.
         @proxy_app.get("/dashboard")
         @proxy_app.get("/dashboard/")
+        async def redirect_dashboard() -> RedirectResponse:
+            return RedirectResponse(url="/", status_code=307)
+
+        @proxy_app.get("/ui")
+        @proxy_app.get("/ui/")
+        @proxy_app.get("/ui/{path:path}")
+        async def redirect_litellm_ui(path: str = "") -> RedirectResponse:
+            return RedirectResponse(url="/", status_code=307)
+
         @proxy_app.get("/dashboard/{path:path}")
+        async def serve_legacy_dashboard(path: str = "") -> FileResponse:
+            return FileResponse(os.path.join(DASHBOARD_DIST, "index.html"))
+
+        # Root SPA fallback. This is registered after LiteLLM's API routes, so
+        # known OpenAI-compatible endpoints continue to resolve normally.
+        @proxy_app.get("/")
+        @proxy_app.get("/{path:path}")
         async def serve_dashboard(path: str = "") -> FileResponse:
             return FileResponse(os.path.join(DASHBOARD_DIST, "index.html"))
