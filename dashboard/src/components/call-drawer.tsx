@@ -30,7 +30,9 @@ export default function CallDrawer({
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-3xl">
         <SheetHeader className="px-6 pt-6 pb-4">
-          <SheetTitle className="text-base">{data?.model ?? 'Call'}</SheetTitle>
+          <SheetTitle className="text-base">
+            {data ? parseApiTimestamp(data.timestamp).toLocaleString() : 'Call'}
+          </SheetTitle>
           <SheetDescription className="font-mono text-xs">{requestId}</SheetDescription>
         </SheetHeader>
 
@@ -41,8 +43,23 @@ export default function CallDrawer({
 
         {data && (
           <div className="space-y-5 px-6 pb-6">
+            {(data.model || data.tags?.length > 0) && (
+              <div className="flex flex-wrap gap-1.5">
+                {data.model && (
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {data.model}
+                  </Badge>
+                )}
+                {data.tags?.map((t) => (
+                  <Badge key={t} variant="secondary" className="font-mono text-[11px]">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-4">
-              <Stat label="Time" value={parseApiTimestamp(data.timestamp).toLocaleString()} />
+              <Stat label="Provider" value={data.provider || '—'} />
               <Stat label="Status" value={data.status} />
               <Stat label="Finish" value={data.finish_reason || '—'} />
               <Stat label="Env" value={data.team || '—'} />
@@ -51,16 +68,6 @@ export default function CallDrawer({
               <Stat label="Latency" value={`${data.latency_ms} ms`} />
               <Stat label="TTFT" value={data.ttft_ms ? `${data.ttft_ms} ms` : '—'} />
             </div>
-
-            {data.tags?.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {data.tags.map((t) => (
-                  <Badge key={t} variant="secondary" className="font-mono text-[11px]">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            )}
 
             <Section title="Metadata">
               <MessageCard
