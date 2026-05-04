@@ -8,7 +8,7 @@ from litellm.integrations.custom_logger import CustomLogger
 # Side-effect import: registers /api/* routes and /dashboard SPA serving on
 # the LiteLLM FastAPI app. Imported here because clickhouse_logger is loaded
 # at proxy startup via litellm_settings.callbacks.
-import dashboard_api  # noqa: F401
+from proxy import dashboard_api  # noqa: F401
 
 
 log = logging.getLogger("clickhouse_logger")

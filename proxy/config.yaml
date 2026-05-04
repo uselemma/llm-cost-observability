@@ -64,7 +64,7 @@ model_list:
       cache_creation_input_token_cost: 0.00000375  # $3.75 / 1M
 
 litellm_settings:
-  callbacks: clickhouse_logger.clickhouse_logger
+  callbacks: proxy.clickhouse_logger.clickhouse_logger
   # drop_params: true would silently strip provider-specific params like
   # `thinking` (Anthropic) and `reasoning_effort` (o-series), which kills
   # reasoning streaming. Keep false so those pass through.
@@ -72,4 +72,4 @@ litellm_settings:
   set_verbose: false
 
 general_settings:
-  custom_auth: auth.user_api_key_auth
+  custom_auth: proxy.auth.user_api_key_auth

@@ -14,14 +14,11 @@ WORKDIR /app
 COPY proxy/requirements.txt .
 RUN uv pip install --python /app/.venv/bin/python --no-cache -r requirements.txt
 
-COPY proxy/clickhouse_logger.py /app/clickhouse_logger.py
-COPY proxy/auth.py              /app/auth.py
-COPY proxy/dashboard_api.py     /app/dashboard_api.py
-COPY proxy/config.yaml          /app/config.yaml
+COPY proxy /app/proxy
 COPY --from=dashboard /dashboard/dist /app/dashboard_dist
 
 ENV PYTHONPATH=/app DASHBOARD_DIST=/app/dashboard_dist
 EXPOSE 4000
 
 ENTRYPOINT []
-CMD ["sh", "-c", "litellm --config /app/config.yaml --port 4000 --num_workers $(nproc)"]
+CMD ["sh", "-c", "litellm --config /app/proxy/config.yaml --port 4000 --num_workers $(nproc)"]

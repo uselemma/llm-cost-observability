@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     # Override the Dockerfile's $(nproc) so local dev uses 1 worker.
-    command: ["sh", "-c", "litellm --config /app/config.yaml --port 4000 --num_workers 1"]
+    command: ["sh", "-c", "litellm --config /app/proxy/config.yaml --port 4000 --num_workers 1"]
     environment:
       LITELLM_KEYS: ${LITELLM_KEYS}
       VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY}

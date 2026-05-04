@@ -41,6 +41,7 @@ export type CallsListParams = {
   model?: string;
   status?: string;
   tag?: string[];
+  cel?: string;
   q?: string;
   limit?: number;
   offset?: number;
@@ -87,6 +88,7 @@ export const api = {
   getCall: (id: string) => request<CallDetail>(`/api/calls/${encodeURIComponent(id)}`),
   listModels: () => request<{ models: string[] }>('/api/models'),
   listTags: () => request<{ tags: string[] }>('/api/tags'),
+  listCelFields: () => request<{ fields: string[] }>('/api/cel-fields'),
 };
 
 export { ApiError };

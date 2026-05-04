@@ -1,7 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -14,13 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import TagSelect from '@/components/tag-select';
 import DateTimeRangePicker from '@/components/datetime-range-picker';
 
@@ -30,10 +31,10 @@ export type Filters = {
   model?: string;
   status?: string;
   tag?: string[];
+  cel?: string;
   q?: string;
 };
 
-const ALL = '__all__';
 const CUSTOM_RANGE = '__custom__';
 
 const RANGE_PRESETS = [
@@ -55,8 +56,10 @@ export default function FilterBar({
   onChange: (f: Filters) => void;
   availableTags?: string[];
 }) {
-  const models = useQuery({ queryKey: ['models'], queryFn: api.listModels });
   const [rangePreset, setRangePreset] = useState<RangePreset>(() => inferInitialRangePreset(filters));
+  const [celActive, setCelActive] = useState(false);
+  const [celDraft, setCelDraft] = useState(filters.cel ?? '');
+  const celFields = useQuery({ queryKey: ['cel-fields'], queryFn: api.listCelFields });
 
   function set<K extends keyof Filters>(k: K, v: Filters[K]) {
     onChange({ ...filters, [k]: v || undefined });
@@ -70,6 +73,12 @@ export default function FilterBar({
     const since = toLocalDateTime(new Date(Date.now() - preset.ms));
     onChange({ ...filters, since, until: undefined });
   }
+
+  const availableFields = celFields.data?.fields ?? [];
+
+  useEffect(() => {
+    setCelDraft(filters.cel ?? '');
+  }, [filters.cel]);
 
   return (
     <div className="flex flex-wrap items-end gap-3 bg-background px-4 py-3">
@@ -109,45 +118,70 @@ export default function FilterBar({
           </DropdownMenuContent>
         </DropdownMenu>
       </Field>
-      <Field label="Model" htmlFor="model">
-        <Select
-          value={filters.model ?? ALL}
-          onValueChange={(v) => set('model', v === ALL ? undefined : v)}
-        >
-          <SelectTrigger id="model" className="w-64 bg-background dark:bg-background">
-            <SelectValue placeholder="All models" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All models</SelectItem>
-            {(models.data?.models ?? []).map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label="Status" htmlFor="status">
-        <Select
-          value={filters.status ?? ALL}
-          onValueChange={(v) => set('status', v === ALL ? undefined : v)}
-        >
-          <SelectTrigger id="status" className="w-32 bg-background dark:bg-background">
-            <SelectValue placeholder="Any" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Any</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-            <SelectItem value="failure">Failure</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
       <Field label="Tags" htmlFor="tags">
         <TagSelect
           value={filters.tag ?? []}
           onChange={(next) => set('tag', next.length ? next : undefined)}
           fallbackTags={availableTags}
         />
+      </Field>
+      <Field label="CEL filter" htmlFor="cel">
+        <Popover open={celActive}>
+          <PopoverAnchor asChild>
+            <div className="w-[32rem]">
+              <Input
+                id="cel"
+                placeholder='metadata.customer_id == "acme" && status == "success"'
+                value={celDraft}
+                onChange={(e) => setCelDraft(e.target.value)}
+                onFocus={() => setCelActive(true)}
+                onBlur={() => {
+                  setCelActive(false);
+                  setCelDraft(filters.cel ?? '');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  set('cel', celDraft);
+                }}
+                className="w-[32rem] bg-background font-mono text-xs dark:bg-background"
+              />
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            align="start"
+            className="w-[32rem] p-0"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <Command>
+              <CommandList>
+                {celFields.isLoading ? (
+                  <CommandEmpty>Loading fields…</CommandEmpty>
+                ) : celFields.isError ? (
+                  <CommandEmpty>Could not load fields.</CommandEmpty>
+                ) : availableFields.length === 0 ? (
+                  <CommandEmpty>No fields available.</CommandEmpty>
+                ) : (
+                  <CommandGroup heading="Queryable fields">
+                    {availableFields.map((field) => (
+                      <CommandItem
+                        key={field}
+                        value={field}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setCelDraft(insertCelSuggestion(celDraft, field));
+                        }}
+                      >
+                        <span className="font-mono">{field}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </Field>
       <Field label="Search bodies" htmlFor="q">
         <Input
@@ -187,6 +221,16 @@ function inferInitialRangePreset(filters: Filters): RangePreset {
 function rangeLabel(rangePreset: RangePreset): string {
   if (rangePreset === CUSTOM_RANGE) return 'Custom...';
   return RANGE_PRESETS.find((p) => p.value === rangePreset)?.label ?? 'Range';
+}
+
+function insertCelSuggestion(value: string, suggestion: string): string {
+  const match = value.match(/([a-zA-Z_][a-zA-Z0-9_.]*)$/);
+  if (!match || match.index == null) {
+    const spacer = value.trim().length === 0 || /\s$/.test(value) ? '' : ' ';
+    return `${value}${spacer}${suggestion}`;
+  }
+  const prefixStart = match.index;
+  return `${value.slice(0, prefixStart)}${suggestion}`;
 }
 
 function Field({

@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.routing import BaseRoute
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel
+from proxy.cel_filter import compile_cel_filter, list_queryable_cel_fields
 
 try:
     from litellm.proxy.proxy_server import app as proxy_app
@@ -170,6 +171,7 @@ async def list_calls(
     model: str | None = None,
     status: str | None = None,
     tag: list[str] = Query(default_factory=list),
+    cel: str | None = None,
     q: str | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -209,6 +211,13 @@ async def list_calls(
                 ors.append(f"has(tags, {{{pname}:String}})")
                 params[pname] = v
             where.append("(" + " OR ".join(ors) + ")")
+    if cel and cel.strip():
+        try:
+            cel_sql, cel_params = compile_cel_filter(cel.strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid cel filter: {exc}")
+        where.append(f"({cel_sql})")
+        params.update(cel_params)
     if q:
         where.append("(positionCaseInsensitive(output_text, {q:String}) > 0 OR positionCaseInsensitive(input_messages, {q:String}) > 0)")
         params["q"] = q
@@ -282,6 +291,13 @@ async def list_models(session: dict[str, Any] = Depends(_require_session)) -> di
         parameters={"env": session["env"]},
     )
     return {"models": [r[0] for r in result.result_rows]}
+
+
+@router.get("/cel-fields")
+async def list_cel_fields(
+    _session: dict[str, Any] = Depends(_require_session),
+) -> dict[str, Any]:
+    return {"fields": list_queryable_cel_fields()}
 
 
 # --- Mount on the LiteLLM app -----------------------------------------------
