@@ -1,16 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/api';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/api";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import MessageCard, { type Message } from '@/components/message-card';
-import { parseApiTimestamp } from '@/lib/datetime';
+} from "@/components/ui/sheet";
+import MessageCard, { type Message } from "@/components/message-card";
+import { parseApiTimestamp } from "@/lib/datetime";
 
 export default function CallDrawer({
   requestId,
@@ -20,7 +20,7 @@ export default function CallDrawer({
   onClose: () => void;
 }) {
   const { data, isPending, error } = useQuery({
-    queryKey: ['call', requestId],
+    queryKey: ["call", requestId],
     queryFn: () => api.getCall(requestId),
   });
 
@@ -31,14 +31,22 @@ export default function CallDrawer({
       <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-3xl">
         <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="text-base">
-            {data ? parseApiTimestamp(data.timestamp).toLocaleString() : 'Call'}
+            {data ? parseApiTimestamp(data.timestamp).toLocaleString() : "Call"}
           </SheetTitle>
-          <SheetDescription className="font-mono text-xs">{requestId}</SheetDescription>
+          <SheetDescription className="font-mono text-xs">
+            {requestId}
+          </SheetDescription>
         </SheetHeader>
 
-        {isPending && <div className="px-6 pb-6 text-sm text-muted-foreground">Loading…</div>}
+        {isPending && (
+          <div className="px-6 pb-6 text-sm text-muted-foreground">
+            Loading…
+          </div>
+        )}
         {error && (
-          <div className="px-6 pb-6 text-sm text-destructive">Error: {(error as Error).message}</div>
+          <div className="px-6 pb-6 text-sm text-destructive">
+            Error: {(error as Error).message}
+          </div>
         )}
 
         {data && (
@@ -51,7 +59,11 @@ export default function CallDrawer({
                   </Badge>
                 )}
                 {data.tags?.map((t) => (
-                  <Badge key={t} variant="secondary" className="font-mono text-[11px]">
+                  <Badge
+                    key={t}
+                    variant="secondary"
+                    className="font-mono text-[11px]"
+                  >
                     {t}
                   </Badge>
                 ))}
@@ -59,20 +71,26 @@ export default function CallDrawer({
             )}
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-4">
-              <Stat label="Provider" value={data.provider || '—'} />
+              <Stat label="Provider" value={data.provider || "—"} />
               <Stat label="Status" value={data.status} />
-              <Stat label="Finish" value={data.finish_reason || '—'} />
-              <Stat label="Env" value={data.team || '—'} />
+              <Stat label="Finish" value={data.finish_reason || "—"} />
+              <Stat label="Env" value={data.team || "—"} />
               <Stat label="Cost" value={`$${data.spend_usd.toFixed(6)}`} />
-              <Stat label="Tokens" value={`${data.prompt_tokens} → ${data.completion_tokens}`} />
+              <Stat
+                label="Tokens"
+                value={`${data.prompt_tokens} → ${data.completion_tokens}`}
+              />
               <Stat label="Latency" value={`${data.latency_ms} ms`} />
-              <Stat label="TTFT" value={data.ttft_ms ? `${data.ttft_ms} ms` : '—'} />
+              <Stat
+                label="TTFT"
+                value={data.ttft_ms ? `${data.ttft_ms} ms` : "—"}
+              />
             </div>
 
             <Section title="Metadata">
               <MessageCard
                 message={{
-                  role: 'metadata',
+                  role: "metadata",
                   content: data.metadata || null,
                 }}
                 defaultOpen={false}
@@ -89,7 +107,9 @@ export default function CallDrawer({
 
             <Section title="Input">
               {inputMessages.length === 0 ? (
-                <pre className="bg-muted p-3 font-mono text-[11px]">{data.input_messages}</pre>
+                <pre className="bg-muted p-3 font-mono text-[11px]">
+                  {data.input_messages}
+                </pre>
               ) : (
                 <div className="space-y-2">
                   {inputMessages.map((m, i) => (
@@ -99,22 +119,26 @@ export default function CallDrawer({
               )}
             </Section>
 
-            {(data.output_text || data.reasoning_content || data.tool_calls) && (
+            {(data.output_text ||
+              data.reasoning_content ||
+              data.tool_calls) && (
               <Section title="Output">
                 <div className="space-y-2">
                   {data.reasoning_content && (
                     <MessageCard
                       message={{
-                        role: 'reasoning',
+                        role: "reasoning",
                         content: data.reasoning_content,
                       }}
                     />
                   )}
                   <MessageCard
                     message={{
-                      role: 'assistant',
+                      role: "assistant",
                       content: data.output_text || null,
-                      tool_calls: data.tool_calls ? safeJson(data.tool_calls) : undefined,
+                      tool_calls: data.tool_calls
+                        ? safeJson(data.tool_calls)
+                        : undefined,
                     }}
                   />
                 </div>
@@ -127,7 +151,13 @@ export default function CallDrawer({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section>
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -141,7 +171,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <span className="text-sm">{value}</span>
     </div>
   );
@@ -165,4 +197,3 @@ function safeJson(s: string): unknown {
     return s;
   }
 }
-

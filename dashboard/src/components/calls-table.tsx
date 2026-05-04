@@ -32,6 +32,17 @@ export default function CallsTable({
   if (rows.length === 0)
     return <div className="p-4 text-sm text-muted-foreground">No calls in this window.</div>;
 
+  const aggregates = rows.reduce(
+    (acc, row) => {
+      acc.cost += row.spend_usd;
+      acc.tokens += row.prompt_tokens + row.completion_tokens;
+      acc.latency += row.latency_ms;
+      return acc;
+    },
+    { cost: 0, tokens: 0, latency: 0 },
+  );
+  const averageLatency = aggregates.latency / rows.length;
+
   return (
     <div className="flex h-full flex-col bg-muted">
       <Table>
@@ -43,8 +54,26 @@ export default function CallsTable({
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted">Status</TableHead>
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted text-right">Cost</TableHead>
             <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Tokens</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[80px] bg-muted text-right">ms</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[120px] bg-muted text-right">Latency (ms)</TableHead>
             <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
+          </TableRow>
+          <TableRow className="hover:bg-muted">
+            <TableHead
+              colSpan={4}
+              className="sticky top-10 z-10 bg-muted/95 text-[10px] uppercase tracking-wider text-muted-foreground"
+            >
+              Aggregates for loaded rows
+            </TableHead>
+            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
+              ${aggregates.cost.toFixed(5)}
+            </TableHead>
+            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
+              {formatTokenCount(aggregates.tokens)}
+            </TableHead>
+            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
+              avg {Math.round(averageLatency)}
+            </TableHead>
+            <TableHead className="sticky top-10 z-10 bg-muted/95" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -97,6 +126,10 @@ function fmtTime(iso: string): string {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function formatTokenCount(tokens: number): string {
+  return tokens.toLocaleString();
 }
 
 function TagPills({ tags }: { tags: string[] }) {
