@@ -9,6 +9,8 @@ export type CallRow = {
   spend_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
   total_tokens: number;
   latency_ms: number;
   ttft_ms: number;
@@ -17,8 +19,6 @@ export type CallRow = {
 };
 
 export type CallDetail = CallRow & {
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
   reasoning_tokens: number;
   audio_tokens: number;
   image_tokens: number;

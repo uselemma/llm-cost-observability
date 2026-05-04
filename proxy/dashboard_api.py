@@ -136,6 +136,8 @@ LIST_COLUMNS = [
     "spend_usd",
     "prompt_tokens",
     "completion_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
     "total_tokens",
     "latency_ms",
     "ttft_ms",

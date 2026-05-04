@@ -41,6 +41,22 @@ model_list:
       api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
       input_cost_per_token: 0.0000002       # $0.20 / 1M
 
+  - model_name: "google/gemini-3-flash"
+    litellm_params:
+      model: "vercel_ai_gateway/google/gemini-3-flash"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+      input_cost_per_token: 0.0000005       # $0.50 / 1M
+      output_cost_per_token: 0.000003       # $3.00 / 1M
+      cache_read_input_token_cost: 0.00000005  # $0.05 / 1M
+
+  - model_name: "google/gemini-3.1-flash-lite-preview"
+    litellm_params:
+      model: "vercel_ai_gateway/google/gemini-3.1-flash-lite-preview"
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+      input_cost_per_token: 0.00000025      # $0.25 / 1M
+      output_cost_per_token: 0.0000015      # $1.50 / 1M
+      cache_read_input_token_cost: 0.000000025  # $0.025 / 1M
+
   - model_name: "xai/grok-4.1-fast-non-reasoning"
     litellm_params:
       model: "vercel_ai_gateway/xai/grok-4.1-fast-non-reasoning"

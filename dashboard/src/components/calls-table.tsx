@@ -37,9 +37,11 @@ export default function CallsTable({
   const aggregates = rows.reduce(
     (acc, row) => {
       acc.cost += row.spend_usd;
+      acc.cacheRead += tokenValue(row.cache_read_tokens);
+      acc.cacheCreation += tokenValue(row.cache_creation_tokens);
       return acc;
     },
-    { cost: 0 },
+    { cost: 0, cacheRead: 0, cacheCreation: 0 },
   );
   const tokenPercentiles = percentileSummary(rows.map((row) => row.total_tokens));
   const latencyPercentiles = percentileSummary(rows.map((row) => row.latency_ms));
@@ -55,6 +57,7 @@ export default function CallsTable({
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted">Status</TableHead>
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted text-right">Cost</TableHead>
             <TableHead className="sticky top-0 z-20 w-[180px] bg-muted text-right">Tokens</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Cached</TableHead>
             <TableHead className="sticky top-0 z-20 w-[200px] bg-muted text-right">Latency (ms)</TableHead>
             <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
           </TableRow>
@@ -75,6 +78,9 @@ export default function CallsTable({
               <TableCell className="text-right tabular-nums">${r.spend_usd.toFixed(5)}</TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground">
                 {r.prompt_tokens}+{r.completion_tokens}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground">
+                <CachedTokens read={tokenValue(r.cache_read_tokens)} creation={tokenValue(r.cache_creation_tokens)} />
               </TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground">
                 {r.latency_ms}
@@ -103,6 +109,9 @@ export default function CallsTable({
                   formatTokenCount(tokenPercentiles[99]),
                 ]}
               />
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+              <CachedTokens read={aggregates.cacheRead} creation={aggregates.cacheCreation} />
             </TableCell>
             <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
               <PercentileLines
@@ -149,6 +158,10 @@ function formatTokenCount(tokens: number): string {
   return tokens.toLocaleString();
 }
 
+function tokenValue(tokens: number | null | undefined): number {
+  return typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : 0;
+}
+
 function percentileSummary(values: number[]): Record<50 | 95 | 99, number> {
   const sorted = [...values].sort((a, b) => a - b);
   return {
@@ -173,6 +186,22 @@ function PercentileLines({ labels, values }: { labels: string[]; values: string[
           <div className="text-right">{values[index]}</div>
         </Fragment>
       ))}
+    </div>
+  );
+}
+
+function CachedTokens({ read, creation }: { read: number; creation: number }) {
+  const total = read + creation;
+  if (total === 0) return <span>—</span>;
+
+  return (
+    <div className="space-y-0.5">
+      <div>{formatTokenCount(total)}</div>
+      {creation > 0 && (
+        <div className="text-[10px] text-muted-foreground/80">
+          read {formatTokenCount(read)} + create {formatTokenCount(creation)}
+        </div>
+      )}
     </div>
   );
 }

@@ -78,7 +78,15 @@ export default function CallDrawer({
               <Stat label="Cost" value={`$${data.spend_usd.toFixed(6)}`} />
               <Stat
                 label="Tokens"
-                value={`${data.prompt_tokens} → ${data.completion_tokens}`}
+                value={`${formatTokenCount(data.prompt_tokens)} → ${formatTokenCount(data.completion_tokens)}`}
+              />
+              <Stat
+                label="Cache Read"
+                value={formatOptionalTokens(data.cache_read_tokens ?? 0)}
+              />
+              <Stat
+                label="Cache Create"
+                value={formatOptionalTokens(data.cache_creation_tokens ?? 0)}
               />
               <Stat label="Latency" value={`${data.latency_ms} ms`} />
               <Stat
@@ -177,6 +185,14 @@ function Stat({ label, value }: { label: string; value: string }) {
       <span className="text-sm">{value}</span>
     </div>
   );
+}
+
+function formatTokenCount(tokens: number): string {
+  return tokens.toLocaleString();
+}
+
+function formatOptionalTokens(tokens: number): string {
+  return tokens > 0 ? formatTokenCount(tokens) : "—";
 }
 
 function parseMessages(raw: string): Message[] {
