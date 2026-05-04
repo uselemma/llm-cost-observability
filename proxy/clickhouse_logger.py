@@ -94,10 +94,8 @@ class ClickHouseLogger(CustomLogger):
                 if isinstance(litellm_md, dict)
                 else {}
             )
-            body_md = (
-                (((kwargs.get("proxy_server_request") or {}).get("body") or {}).get("metadata"))
-                or {}
-            )
+            body = ((kwargs.get("proxy_server_request") or {}).get("body") or {})
+            body_md = (body.get("metadata") if isinstance(body, dict) else None) or {}
             if not isinstance(proxy_md, dict):
                 proxy_md = {}
             if not isinstance(body_md, dict):
@@ -121,11 +119,18 @@ class ClickHouseLogger(CustomLogger):
             prompt_tokens = _int(_get(usage, "prompt_tokens"))
             completion_tokens = _int(_get(usage, "completion_tokens"))
             total_tokens = _int(_get(usage, "total_tokens"))
-            cache_read = _int(_get(usage, "cache_read_input_tokens"))
-            cache_creation = _int(_get(usage, "cache_creation_input_tokens"))
-
             ctd = _get(usage, "completion_tokens_details") or {}
             ptd = _get(usage, "prompt_tokens_details") or {}
+            cache_read = _int(
+                _get(usage, "cache_read_input_tokens")
+                or _get(ptd, "cache_read_input_tokens")
+                or _get(ptd, "cached_tokens")
+            )
+            cache_creation = _int(
+                _get(usage, "cache_creation_input_tokens")
+                or _get(ptd, "cache_creation_input_tokens")
+                or _get(ptd, "cache_creation_tokens")
+            )
             reasoning_tokens = _int(_get(usage, "reasoning_tokens") or _get(ctd, "reasoning_tokens"))
             audio_tokens = _int(_get(ptd, "audio_tokens") or _get(ctd, "audio_tokens"))
             image_tokens = _int(_get(ptd, "image_tokens") or _get(ctd, "image_tokens"))
@@ -193,7 +198,12 @@ class ClickHouseLogger(CustomLogger):
                 kwargs.get("custom_llm_provider", "") or "",
                 litellm_md.get("user_api_key_alias", "") or "",
                 team,
-                str(proxy_md.get("user", "") or ""),
+                str(
+                    (body.get("user") if isinstance(body, dict) else "")
+                    or proxy_md.get("user", "")
+                    or kwargs.get("user", "")
+                    or ""
+                ),
                 prompt_tokens,
                 completion_tokens,
                 cache_read,
