@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { CallRow } from '@/api';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +9,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -35,13 +37,12 @@ export default function CallsTable({
   const aggregates = rows.reduce(
     (acc, row) => {
       acc.cost += row.spend_usd;
-      acc.tokens += row.prompt_tokens + row.completion_tokens;
-      acc.latency += row.latency_ms;
       return acc;
     },
-    { cost: 0, tokens: 0, latency: 0 },
+    { cost: 0 },
   );
-  const averageLatency = aggregates.latency / rows.length;
+  const tokenPercentiles = percentileSummary(rows.map((row) => row.total_tokens));
+  const latencyPercentiles = percentileSummary(rows.map((row) => row.latency_ms));
 
   return (
     <div className="flex h-full flex-col bg-muted">
@@ -53,27 +54,9 @@ export default function CallsTable({
             <TableHead className="sticky top-0 z-20 w-[240px] bg-muted">Model</TableHead>
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted">Status</TableHead>
             <TableHead className="sticky top-0 z-20 w-[100px] bg-muted text-right">Cost</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Tokens</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[120px] bg-muted text-right">Latency (ms)</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[180px] bg-muted text-right">Tokens</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[200px] bg-muted text-right">Latency (ms)</TableHead>
             <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
-          </TableRow>
-          <TableRow className="hover:bg-muted">
-            <TableHead
-              colSpan={4}
-              className="sticky top-10 z-10 bg-muted/95 text-[10px] uppercase tracking-wider text-muted-foreground"
-            >
-              Aggregates for loaded rows
-            </TableHead>
-            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
-              ${aggregates.cost.toFixed(5)}
-            </TableHead>
-            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
-              {formatTokenCount(aggregates.tokens)}
-            </TableHead>
-            <TableHead className="sticky top-10 z-10 bg-muted/95 text-right font-mono text-[11px]">
-              avg {Math.round(averageLatency)}
-            </TableHead>
-            <TableHead className="sticky top-10 z-10 bg-muted/95" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -100,6 +83,40 @@ export default function CallsTable({
             </TableRow>
           ))}
         </TableBody>
+        <TableFooter>
+          <TableRow className="hover:bg-muted">
+            <TableCell
+              colSpan={4}
+              className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-[10px] uppercase tracking-wider text-muted-foreground"
+            >
+              Aggregates for loaded rows
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+              ${aggregates.cost.toFixed(5)}
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+              <PercentileLines
+                labels={['p50', 'p95', 'p99']}
+                values={[
+                  formatTokenCount(tokenPercentiles[50]),
+                  formatTokenCount(tokenPercentiles[95]),
+                  formatTokenCount(tokenPercentiles[99]),
+                ]}
+              />
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+              <PercentileLines
+                labels={['p50', 'p95', 'p99']}
+                values={[
+                  String(Math.round(latencyPercentiles[50])),
+                  String(Math.round(latencyPercentiles[95])),
+                  String(Math.round(latencyPercentiles[99])),
+                ]}
+              />
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95" />
+          </TableRow>
+        </TableFooter>
       </Table>
 
       <div className="flex items-center justify-center gap-3 border-t bg-muted px-4 py-3 text-xs text-muted-foreground">
@@ -130,6 +147,34 @@ function fmtTime(iso: string): string {
 
 function formatTokenCount(tokens: number): string {
   return tokens.toLocaleString();
+}
+
+function percentileSummary(values: number[]): Record<50 | 95 | 99, number> {
+  const sorted = [...values].sort((a, b) => a - b);
+  return {
+    50: percentile(sorted, 50),
+    95: percentile(sorted, 95),
+    99: percentile(sorted, 99),
+  };
+}
+
+function percentile(sortedValues: number[], p: number): number {
+  if (sortedValues.length === 0) return 0;
+  const index = Math.min(sortedValues.length - 1, Math.ceil((p / 100) * sortedValues.length) - 1);
+  return sortedValues[index];
+}
+
+function PercentileLines({ labels, values }: { labels: string[]; values: string[] }) {
+  return (
+    <div className="ml-auto grid w-max grid-cols-[auto_auto] gap-x-2 gap-y-0.5">
+      {labels.map((label, index) => (
+        <Fragment key={label}>
+          <div className="text-left">{label}</div>
+          <div className="text-right">{values[index]}</div>
+        </Fragment>
+      ))}
+    </div>
+  );
 }
 
 function TagPills({ tags }: { tags: string[] }) {
