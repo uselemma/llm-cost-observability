@@ -191,15 +191,39 @@ class _CelParser:
             if token.value == "false":
                 return _Literal(False)
             return _Literal(None)
-        if token.kind == "ident" and token.value == "has":
-            self._idx += 1
-            self._expect("punct", "(")
-            arg = self._parse_field_ref()
-            self._expect("punct", ")")
-            return _Call("has", (arg,))
         if token.kind == "ident":
-            return self._parse_field_ref()
+            return self._parse_identifier_atom()
         raise ValueError(f"unexpected token: {token.value}")
+
+    def _parse_identifier_atom(self) -> Any:
+        first = self._expect("ident")
+
+        # Function style, e.g. has(metadata.trace_id), startsWith(status, "suc")
+        if self._accept("punct", "("):
+            return _Call(first.value, self._parse_call_args())
+
+        # Field reference and optional method style helper:
+        # metadata.customer_id.startsWith("acme")
+        parts = [first.value]
+        while self._accept("punct", "."):
+            next_ident = self._expect("ident")
+            if next_ident.value in {"startsWith", "endsWith", "contains"} and self._accept(
+                "punct", "("
+            ):
+                base = _FieldRef(tuple(parts))
+                return _Call(next_ident.value, (base, *self._parse_call_args()))
+            parts.append(next_ident.value)
+
+        return _FieldRef(tuple(parts))
+
+    def _parse_call_args(self) -> tuple[Any, ...]:
+        if self._accept("punct", ")"):
+            return tuple()
+        args: list[Any] = [self._parse_or()]
+        while self._accept("punct", ","):
+            args.append(self._parse_or())
+        self._expect("punct", ")")
+        return tuple(args)
 
     def _parse_field_ref(self) -> _FieldRef:
         first = self._expect("ident")
@@ -250,15 +274,7 @@ class _CelToSqlCompiler:
             return self._bind("lit", "String", node.value), "string"
 
         if isinstance(node, _Call):
-            if node.name != "has" or len(node.args) != 1:
-                raise ValueError("unsupported function call")
-            arg = node.args[0]
-            if not isinstance(arg, _FieldRef):
-                raise ValueError("has(...) expects a field reference")
-            if len(arg.parts) < 2 or arg.parts[0] != "metadata":
-                raise ValueError("has(...) only supports metadata.* paths")
-            path = ".".join(arg.parts[1:])
-            return f"JSONHas(metadata, {self._bind('meta_path', 'String', path)})", "bool"
+            return self._compile_call(node)
 
         if isinstance(node, _Unary):
             inner_sql, inner_type = self.compile(node.expr)
@@ -305,6 +321,60 @@ class _CelToSqlCompiler:
             return f"({left['name']} {op} {right['name']})", "bool"
 
         raise ValueError("comparison must include at least one supported field reference")
+
+    def _compile_call(self, node: _Call) -> tuple[str, str]:
+        if node.name == "has":
+            if len(node.args) != 1:
+                raise ValueError("has(...) expects exactly one argument")
+            arg = node.args[0]
+            if not isinstance(arg, _FieldRef):
+                raise ValueError("has(...) expects a field reference")
+            if len(arg.parts) < 2 or arg.parts[0] != "metadata":
+                raise ValueError("has(...) only supports metadata.* paths")
+            path = ".".join(arg.parts[1:])
+            return f"JSONHas(metadata, {self._bind('meta_path', 'String', path)})", "bool"
+
+        if node.name in {"startsWith", "endsWith", "contains"}:
+            return self._compile_string_helper_call(node)
+
+        raise ValueError(f"unsupported function call: {node.name}")
+
+    def _compile_string_helper_call(self, node: _Call) -> tuple[str, str]:
+        if len(node.args) != 2:
+            raise ValueError(f"{node.name}(...) expects exactly two arguments")
+
+        haystack_expr, exists_guard = self._string_expr_from_field(node.args[0], node.name)
+        needle = node.args[1]
+        if not isinstance(needle, _Literal) or not isinstance(needle.value, str):
+            raise ValueError(f"{node.name}(...) expects a string literal as the second argument")
+        needle_param = self._bind("needle", "String", needle.value)
+
+        if node.name == "startsWith":
+            predicate = f"startsWith({haystack_expr}, {needle_param})"
+        elif node.name == "endsWith":
+            predicate = f"endsWith({haystack_expr}, {needle_param})"
+        else:
+            predicate = f"(positionCaseInsensitive({haystack_expr}, {needle_param}) > 0)"
+
+        if exists_guard:
+            return f"({exists_guard} AND ({predicate}))", "bool"
+        return predicate, "bool"
+
+    def _string_expr_from_field(self, node: Any, fn_name: str) -> tuple[str, str | None]:
+        info = self._describe_operand(node)
+        if info["kind"] == "field":
+            if info["type"] != "String":
+                raise ValueError(f"{fn_name}(...) first argument must be a string field")
+            return info["name"], None
+
+        if info["kind"] == "metadata":
+            path_param = self._bind("meta_path", "String", info["path"])
+            return (
+                f"JSONExtractString(metadata, {path_param})",
+                f"JSONHas(metadata, {path_param})",
+            )
+
+        raise ValueError(f"{fn_name}(...) first argument must be a field reference")
 
     def _metadata_literal_compare(
         self, path: str, op: str, value: str | float | bool | None
