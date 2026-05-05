@@ -59,6 +59,8 @@ LITELLM_KEYS="sk-...:dev,sk-...:prod"
 
 VERCEL_AI_GATEWAY_API_KEY=...
 FIREWORKS_AI_API_KEY=...          # required for fireworks/* routes
+CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL=...
+CLOUDFLARE_AI_GATEWAY_API_TOKEN=...
 
 CLICKHOUSE_HOST=<your-instance>.clickhouse.cloud
 CLICKHOUSE_PORT=8443                # HTTPS port for clickhouse-connect
@@ -154,6 +156,16 @@ Fireworks AI routes use the `fireworks/` prefix and map to Fireworks' hosted
 - `fireworks/kimi-k2p6`
 - `fireworks/kimi-k2p5`
 - `fireworks/<any-fireworks-model-id>`
+
+Cloudflare AI Gateway routes use the `cloudflare/` prefix. Set
+`CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL` to the compat base URL, without the
+final `/chat/completions` path:
+
+`https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat`
+
+Use a Workers AI API token in `CLOUDFLARE_AI_GATEWAY_API_TOKEN`:
+
+- `cloudflare/kimi-k2.6`
 
 Cost is computed automatically for any model in
 [LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
@@ -270,8 +282,8 @@ FROM litellm_logs WHERE status = 'success'
 GROUP BY month ORDER BY month DESC;
 ```
 
-Compare against the Vercel invoice. Persistent delta = a known offset to
-document; sudden delta = something changed (new model, missing pricing entry).
+Compare against the upstream gateway invoice. Persistent delta = a known offset
+to document; sudden delta = something changed (new model, missing pricing entry).
 
 ## Out of scope
 
@@ -279,4 +291,5 @@ Per PRD §2, this project is observability-only. **Not** in here:
 - Hard budget enforcement (would need LiteLLM Enterprise tier).
 - A UI / debug browser. Engineers query ClickHouse directly via Grafana,
   Metabase, or the Cloud SQL console.
-- Replacing Vercel AI Gateway. Vercel remains the provider boundary.
+- Replacing gateway providers wholesale. Vercel remains the default provider
+  boundary; Cloudflare is configured only for explicit `cloudflare/` routes.

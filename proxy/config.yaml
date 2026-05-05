@@ -26,6 +26,20 @@ model_list:
       api_key: os.environ/FIREWORKS_AI_API_KEY
       allowed_openai_params: ["thinking", "reasoning_effort"]
 
+  # ----- Cloudflare AI Gateway routes. Point
+  # CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL at:
+  # https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat
+
+  - model_name: "cloudflare/kimi-k2.6"
+    litellm_params:
+      model: "openai/workers-ai/@cf/moonshotai/kimi-k2.6"
+      api_base: os.environ/CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL
+      api_key: os.environ/CLOUDFLARE_AI_GATEWAY_API_TOKEN
+      input_cost_per_token: 0.00000095 # $0.95 / 1M
+      output_cost_per_token: 0.000004 # $4.00 / 1M
+      cache_read_input_token_cost: 0.00000016 # $0.16 / 1M
+      allowed_openai_params: ["reasoning_effort"]
+
   - model_name: "*"
     litellm_params:
       model: "vercel_ai_gateway/*"
