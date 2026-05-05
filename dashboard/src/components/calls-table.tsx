@@ -43,8 +43,9 @@ export default function CallsTable({
     },
     { cost: 0, cacheRead: 0, cacheCreation: 0 },
   );
-  const tokenPercentiles = percentileSummary(rows.map((row) => row.total_tokens));
+  const tokenPercentiles = percentileSummary(rows.map((row) => totalTokenCount(row)));
   const latencyPercentiles = percentileSummary(rows.map((row) => row.latency_ms));
+  const tpsPercentiles = percentileSummary(rows.map((row) => tokensPerSecond(row)).filter(isNumber));
 
   return (
     <div className="flex h-full flex-col bg-muted">
@@ -59,6 +60,7 @@ export default function CallsTable({
             <TableHead className="sticky top-0 z-20 w-[180px] bg-muted text-right">Tokens</TableHead>
             <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Cached</TableHead>
             <TableHead className="sticky top-0 z-20 w-[200px] bg-muted text-right">Latency (ms)</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[120px] bg-muted text-right">TPS</TableHead>
             <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
           </TableRow>
         </TableHeader>
@@ -77,13 +79,16 @@ export default function CallsTable({
               <TableCell>{statusBadge(r.status, r.finish_reason)}</TableCell>
               <TableCell className="text-right tabular-nums">${r.spend_usd.toFixed(5)}</TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground">
-                {r.prompt_tokens}+{r.completion_tokens}
+                {r.prompt_tokens}+{outputTokenCount(r)}
               </TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground">
                 <CachedTokens read={tokenValue(r.cache_read_tokens)} creation={tokenValue(r.cache_creation_tokens)} />
               </TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground">
                 {r.latency_ms}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground">
+                {formatTps(tokensPerSecond(r))}
               </TableCell>
               <TableCell className="max-w-[1px] truncate">{r.output_preview || '—'}</TableCell>
             </TableRow>
@@ -120,6 +125,16 @@ export default function CallsTable({
                   String(Math.round(latencyPercentiles[50])),
                   String(Math.round(latencyPercentiles[95])),
                   String(Math.round(latencyPercentiles[99])),
+                ]}
+              />
+            </TableCell>
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+              <PercentileLines
+                labels={['p50', 'p95', 'p99']}
+                values={[
+                  formatTps(tpsPercentiles[50]),
+                  formatTps(tpsPercentiles[95]),
+                  formatTps(tpsPercentiles[99]),
                 ]}
               />
             </TableCell>
@@ -160,6 +175,34 @@ function formatTokenCount(tokens: number): string {
 
 function tokenValue(tokens: number | null | undefined): number {
   return typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : 0;
+}
+
+function outputTokenCount(row: CallRow): number {
+  return row.completion_tokens + row.reasoning_tokens;
+}
+
+function totalTokenCount(row: CallRow): number {
+  return row.prompt_tokens + outputTokenCount(row);
+}
+
+function tokensPerSecond(row: CallRow): number | null {
+  const outputTokens = outputTokenCount(row);
+  const generationMs =
+    row.ttft_ms > 0 && row.latency_ms > row.ttft_ms
+      ? row.latency_ms - row.ttft_ms
+      : row.latency_ms;
+
+  if (generationMs <= 0 || outputTokens <= 0) return null;
+  return outputTokens / (generationMs / 1000);
+}
+
+function formatTps(tps: number | null | undefined): string {
+  if (!isNumber(tps)) return '—';
+  return tps >= 10 ? tps.toFixed(0) : tps.toFixed(1);
+}
+
+function isNumber(value: number | null | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function percentileSummary(values: number[]): Record<50 | 95 | 99, number> {

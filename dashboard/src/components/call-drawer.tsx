@@ -78,7 +78,7 @@ export default function CallDrawer({
               <Stat label="Cost" value={`$${data.spend_usd.toFixed(6)}`} />
               <Stat
                 label="Tokens"
-                value={`${formatTokenCount(data.prompt_tokens)} → ${formatTokenCount(data.completion_tokens)}`}
+                value={`${formatTokenCount(data.prompt_tokens)} → ${formatTokenCount(outputTokenCount(data))}`}
               />
               <Stat
                 label="Cache Read"
@@ -89,6 +89,7 @@ export default function CallDrawer({
                 value={formatOptionalTokens(data.cache_creation_tokens ?? 0)}
               />
               <Stat label="Latency" value={`${data.latency_ms} ms`} />
+              <Stat label="TPS" value={formatTps(tokensPerSecond(data))} />
               <Stat
                 label="TTFT"
                 value={data.ttft_ms ? `${data.ttft_ms} ms` : "—"}
@@ -193,6 +194,40 @@ function formatTokenCount(tokens: number): string {
 
 function formatOptionalTokens(tokens: number): string {
   return tokens > 0 ? formatTokenCount(tokens) : "—";
+}
+
+function outputTokenCount({
+  completion_tokens,
+  reasoning_tokens,
+}: {
+  completion_tokens: number;
+  reasoning_tokens: number;
+}): number {
+  return completion_tokens + reasoning_tokens;
+}
+
+function tokensPerSecond({
+  completion_tokens,
+  reasoning_tokens,
+  latency_ms,
+  ttft_ms,
+}: {
+  completion_tokens: number;
+  reasoning_tokens: number;
+  latency_ms: number;
+  ttft_ms: number;
+}): number | null {
+  const outputTokens = outputTokenCount({ completion_tokens, reasoning_tokens });
+  const generationMs =
+    ttft_ms > 0 && latency_ms > ttft_ms ? latency_ms - ttft_ms : latency_ms;
+
+  if (generationMs <= 0 || outputTokens <= 0) return null;
+  return outputTokens / (generationMs / 1000);
+}
+
+function formatTps(tps: number | null): string {
+  if (tps == null || !Number.isFinite(tps)) return "—";
+  return `${tps >= 10 ? tps.toFixed(0) : tps.toFixed(1)} tok/s`;
 }
 
 function parseMessages(raw: string): Message[] {
