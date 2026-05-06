@@ -167,6 +167,19 @@ Use a Workers AI API token in `CLOUDFLARE_AI_GATEWAY_API_TOKEN`:
 
 - `cloudflare/kimi-k2.6`
 
+Direct DeepSeek API routes use the `deepseek/` prefix. Set
+`DEEPSEEK_API_KEY`, then call:
+
+- `deepseek/deepseek-v4-flash`
+
+For non-thinking responses on V4 Flash, pass DeepSeek's native flag:
+
+```json
+{
+  "thinking": { "type": "disabled" }
+}
+```
+
 Cost is computed automatically for any model in
 [LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
 For bleeding-edge models that aren't in the map yet (`spend_usd=0`), add an

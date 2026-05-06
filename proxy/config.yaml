@@ -40,6 +40,17 @@ model_list:
       cache_read_input_token_cost: 0.00000016 # $0.16 / 1M
       allowed_openai_params: ["reasoning_effort"]
 
+  # ----- Direct DeepSeek API routes.
+
+  - model_name: "deepseek/deepseek-v4-flash"
+    litellm_params:
+      model: "deepseek/deepseek-v4-flash"
+      api_key: os.environ/DEEPSEEK_API_KEY
+      input_cost_per_token: 0.00000014 # $0.14 / 1M cache miss
+      output_cost_per_token: 0.00000028 # $0.28 / 1M
+      cache_read_input_token_cost: 0.0000000028 # $0.0028 / 1M
+      allowed_openai_params: ["thinking", "reasoning_effort"]
+
   - model_name: "*"
     litellm_params:
       model: "vercel_ai_gateway/*"
