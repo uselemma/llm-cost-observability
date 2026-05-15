@@ -9,13 +9,18 @@ import CallDrawer from '@/components/call-drawer';
 import FilterBar, { type Filters } from '@/components/filter-bar';
 import { ModeToggle } from '@/components/mode-toggle';
 
-const PAGE_SIZE = 100;
+type PageSizeOption = 100 | 250 | 500 | 'max';
+
+const DEFAULT_PAGE_SIZE: PageSizeOption = 100;
 
 export default function Calls() {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ['me'], queryFn: api.me });
   const [filters, setFilters] = useState<Filters>({ since: defaultSince() });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
+  const isMaxMode = pageSize === 'max';
+  const requestLimit = isMaxMode ? 0 : pageSize;
 
   const {
     data,
@@ -26,12 +31,14 @@ export default function Calls() {
     fetchNextPage,
     hasNextPage,
   } = useInfiniteQuery({
-    queryKey: ['calls', filters],
+    queryKey: ['calls', filters, pageSize],
     queryFn: ({ pageParam }) =>
-      api.listCalls({ ...filters, limit: PAGE_SIZE, offset: pageParam }),
+      api.listCalls({ ...filters, limit: requestLimit, offset: pageParam }),
     initialPageParam: 0,
-    getNextPageParam: (last, all) =>
-      last.rows.length < PAGE_SIZE ? undefined : all.length * PAGE_SIZE,
+    getNextPageParam: (last, all) => {
+      if (isMaxMode) return undefined;
+      return last.rows.length < requestLimit ? undefined : all.length * requestLimit;
+    },
   });
 
   const rows = data?.pages.flatMap((p) => p.rows) ?? [];
@@ -87,6 +94,8 @@ export default function Calls() {
             hasMore={!!hasNextPage}
             loadingMore={isFetchingNextPage}
             onLoadMore={() => fetchNextPage()}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
           />
         )}
       </main>

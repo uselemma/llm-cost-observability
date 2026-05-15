@@ -1,8 +1,16 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Loader2 } from 'lucide-react';
 import type { CallRow } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { parseApiTimestamp } from '@/lib/datetime';
 import {
@@ -22,6 +30,8 @@ export default function CallsTable({
   hasMore,
   loadingMore,
   onLoadMore,
+  pageSize,
+  onPageSizeChange,
 }: {
   rows: CallRow[];
   onSelect: (id: string) => void;
@@ -29,10 +39,26 @@ export default function CallsTable({
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  pageSize: 100 | 250 | 500 | 'max';
+  onPageSizeChange: (size: 100 | 250 | 500 | 'max') => void;
 }) {
   if (loading) return <div className="p-4 text-sm text-muted-foreground">Loading…</div>;
   if (rows.length === 0)
     return <div className="p-4 text-sm text-muted-foreground">No calls in this window.</div>;
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 44,
+    overscan: 20,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const topPaddingHeight = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const bottomPaddingHeight =
+    virtualRows.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+      : 0;
 
   const aggregates = rows.reduce(
     (acc, row) => {
@@ -49,7 +75,7 @@ export default function CallsTable({
 
   return (
     <div className="flex h-full flex-col bg-muted">
-      <Table>
+      <Table containerRef={tableContainerRef}>
         <TableHeader>
           <TableRow>
             <TableHead className="sticky top-0 z-20 w-[160px] bg-muted">Time</TableHead>
@@ -65,7 +91,14 @@ export default function CallsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r) => (
+          {topPaddingHeight > 0 && (
+            <TableRow className="pointer-events-none hover:bg-transparent">
+              <TableCell colSpan={10} className="border-b-0 p-0" style={{ height: topPaddingHeight }} />
+            </TableRow>
+          )}
+          {virtualRows.map((virtualRow) => {
+            const r = rows[virtualRow.index];
+            return (
             <TableRow
               key={r.request_id}
               onClick={() => onSelect(r.request_id)}
@@ -92,7 +125,13 @@ export default function CallsTable({
               </TableCell>
               <TableCell className="max-w-[1px] truncate">{r.output_preview || '—'}</TableCell>
             </TableRow>
-          ))}
+            );
+          })}
+          {bottomPaddingHeight > 0 && (
+            <TableRow className="pointer-events-none hover:bg-transparent">
+              <TableCell colSpan={10} className="border-b-0 p-0" style={{ height: bottomPaddingHeight }} />
+            </TableRow>
+          )}
         </TableBody>
         <TableFooter>
           <TableRow className="hover:bg-muted">
@@ -144,7 +183,8 @@ export default function CallsTable({
       </Table>
 
       <div className="flex items-center justify-center gap-3 border-t bg-muted px-4 py-3 text-xs text-muted-foreground">
-        <span className="tabular-nums">{rows.length} rows</span>
+        <span className="tabular-nums">{rows.length.toLocaleString()} loaded</span>
+        <RowsPerPageControl pageSize={pageSize} onPageSizeChange={onPageSizeChange} />
         {hasMore ? (
           <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
             {loadingMore && <Loader2 className="animate-spin" />}
@@ -155,6 +195,42 @@ export default function CallsTable({
         )}
       </div>
     </div>
+  );
+}
+
+const PAGE_SIZE_OPTIONS: Array<100 | 250 | 500 | 'max'> = [100, 250, 500, 'max'];
+
+function RowsPerPageControl({
+  pageSize,
+  onPageSizeChange,
+}: {
+  pageSize: 100 | 250 | 500 | 'max';
+  onPageSizeChange: (size: 100 | 250 | 500 | 'max') => void;
+}) {
+  function pageSizeLabel(size: 100 | 250 | 500 | 'max'): string {
+    return size === 'max' ? 'max (all)' : `${size} rows/page`;
+  }
+
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="tabular-nums">
+          {pageSizeLabel(pageSize)}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center">
+        <DropdownMenuRadioGroup
+          value={String(pageSize)}
+          onValueChange={(value) => onPageSizeChange(value === 'max' ? 'max' : (Number(value) as 100 | 250 | 500))}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <DropdownMenuRadioItem key={size} value={String(size)}>
+              {pageSizeLabel(size)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

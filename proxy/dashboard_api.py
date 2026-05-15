@@ -179,8 +179,10 @@ async def list_calls(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    limit = max(1, min(limit, 500))
-    offset = max(0, offset)
+    fetch_all = limit == 0
+    if not fetch_all:
+        limit = max(1, limit)
+        offset = max(0, offset)
 
     where: list[str] = ["team = {env:String}"]
     params: dict[str, Any] = {"env": session["env"]}
@@ -227,12 +229,14 @@ async def list_calls(
 
     where_sql = " AND ".join(where) if where else "1=1"
 
+    pagination_sql = "" if fetch_all else f"LIMIT {limit} OFFSET {offset}"
+
     sql = f"""
         SELECT {", ".join(LIST_COLUMNS)}
         FROM litellm_logs
         WHERE {where_sql}
         ORDER BY timestamp DESC
-        LIMIT {limit} OFFSET {offset}
+        {pagination_sql}
     """
 
     client = _ch_client()
