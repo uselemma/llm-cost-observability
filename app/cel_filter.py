@@ -1,26 +1,17 @@
+"""Compile a small CEL subset into ClickHouse predicates over otel_traces.
+
+Promoted fields map onto SpanAttributes / span columns (see queries.CEL_FIELD_SQL).
+`metadata.<key>` maps to `SpanAttributes['<key>']` (CF `cf-aig-metadata`).
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-PROMOTED_FIELDS: dict[str, str] = {
-    "request_id": "String",
-    "model": "String",
-    "provider": "String",
-    "team": "String",
-    "status": "String",
-    "finish_reason": "String",
-    "spend_usd": "Float64",
-    "prompt_tokens": "Float64",
-    "completion_tokens": "Float64",
-    "total_tokens": "Float64",
-    "latency_ms": "Float64",
-    "ttft_ms": "Float64",
-    "num_retries": "Float64",
-}
+from app.queries import CEL_FIELD_SQL
 
 QUERYABLE_CEL_FIELDS: tuple[str, ...] = (
-    *tuple(sorted(PROMOTED_FIELDS.keys())),
+    *tuple(sorted(CEL_FIELD_SQL.keys())),
     "metadata.<key>",
 )
 
@@ -198,12 +189,9 @@ class _CelParser:
     def _parse_identifier_atom(self) -> Any:
         first = self._expect("ident")
 
-        # Function style, e.g. has(metadata.trace_id), startsWith(status, "suc")
         if self._accept("punct", "("):
             return _Call(first.value, self._parse_call_args())
 
-        # Field reference and optional method style helper:
-        # metadata.customer_id.startsWith("acme")
         parts = [first.value]
         while self._accept("punct", "."):
             next_ident = self._expect("ident")
@@ -224,13 +212,6 @@ class _CelParser:
             args.append(self._parse_or())
         self._expect("punct", ")")
         return tuple(args)
-
-    def _parse_field_ref(self) -> _FieldRef:
-        first = self._expect("ident")
-        parts = [first.value]
-        while self._accept("punct", "."):
-            parts.append(self._expect("ident").value)
-        return _FieldRef(tuple(parts))
 
     def _peek(self) -> _Token | None:
         if self._idx >= len(self._tokens):
@@ -310,15 +291,15 @@ class _CelToSqlCompiler:
             return self._metadata_literal_compare(right["path"], flipped, left["value"])
 
         if left["kind"] == "field" and right["kind"] == "literal":
-            return self._field_literal_compare(left["name"], left["type"], op, right["value"])
+            return self._field_literal_compare(left["sql"], left["type"], op, right["value"])
         if right["kind"] == "field" and left["kind"] == "literal":
             flipped = _flip_compare(op)
-            return self._field_literal_compare(right["name"], right["type"], flipped, left["value"])
+            return self._field_literal_compare(right["sql"], right["type"], flipped, left["value"])
 
         if left["kind"] == "field" and right["kind"] == "field":
             if left["type"] != right["type"]:
                 raise ValueError("cannot compare fields with different types")
-            return f"({left['name']} {op} {right['name']})", "bool"
+            return f"({left['sql']} {op} {right['sql']})", "bool"
 
         raise ValueError("comparison must include at least one supported field reference")
 
@@ -332,7 +313,8 @@ class _CelToSqlCompiler:
             if len(arg.parts) < 2 or arg.parts[0] != "metadata":
                 raise ValueError("has(...) only supports metadata.* paths")
             path = ".".join(arg.parts[1:])
-            return f"JSONHas(metadata, {self._bind('meta_path', 'String', path)})", "bool"
+            key = self._bind("meta_key", "String", path)
+            return f"(mapContains(SpanAttributes, {key}) AND SpanAttributes[{key}] != '')", "bool"
 
         if node.name in {"startsWith", "endsWith", "contains"}:
             return self._compile_string_helper_call(node)
@@ -365,13 +347,13 @@ class _CelToSqlCompiler:
         if info["kind"] == "field":
             if info["type"] != "String":
                 raise ValueError(f"{fn_name}(...) first argument must be a string field")
-            return info["name"], None
+            return info["sql"], None
 
         if info["kind"] == "metadata":
-            path_param = self._bind("meta_path", "String", info["path"])
+            key = self._bind("meta_key", "String", info["path"])
             return (
-                f"JSONExtractString(metadata, {path_param})",
-                f"JSONHas(metadata, {path_param})",
+                f"SpanAttributes[{key}]",
+                f"(mapContains(SpanAttributes, {key}) AND SpanAttributes[{key}] != '')",
             )
 
         raise ValueError(f"{fn_name}(...) first argument must be a field reference")
@@ -379,60 +361,54 @@ class _CelToSqlCompiler:
     def _metadata_literal_compare(
         self, path: str, op: str, value: str | float | bool | None
     ) -> tuple[str, str]:
+        key = self._bind("meta_key", "String", path)
+        exists = f"(mapContains(SpanAttributes, {key}) AND SpanAttributes[{key}] != '')"
+
         if value is None:
             if op not in ("==", "!="):
                 raise ValueError("metadata null comparisons only support == and !=")
-            path_param = self._bind("meta_path", "String", path)
-            exists = f"JSONHas(metadata, {path_param})"
-            is_null = f"(JSONExtractRaw(metadata, {path_param}) = 'null')"
             if op == "==":
-                return f"({exists} AND {is_null})", "bool"
-            return f"(NOT ({exists} AND {is_null}))", "bool"
-
-        path_param = self._bind("meta_path", "String", path)
-        exists = f"JSONHas(metadata, {path_param})"
+                return f"(NOT {exists})", "bool"
+            return exists, "bool"
 
         if isinstance(value, bool):
             if op not in ("==", "!="):
                 raise ValueError("boolean comparisons only support == and !=")
-            rhs = "'true'" if value else "'false'"
-            return (
-                f"({exists} AND (JSONExtractRaw(metadata, {path_param}) {op} {rhs}))",
-                "bool",
-            )
+            rhs = self._bind("meta_str", "String", "true" if value else "false")
+            return f"({exists} AND (SpanAttributes[{key}] {op} {rhs}))", "bool"
 
         if isinstance(value, float):
-            lhs = f"toFloat64OrNull(JSONExtractRaw(metadata, {path_param}))"
+            lhs = f"toFloat64OrNull(SpanAttributes[{key}])"
             rhs = self._bind("meta_num", "Float64", value)
             return f"({exists} AND ({lhs} {op} {rhs}))", "bool"
 
-        lhs = f"JSONExtractString(metadata, {path_param})"
+        lhs = f"SpanAttributes[{key}]"
         rhs = self._bind("meta_str", "String", value)
         return f"({exists} AND ({lhs} {op} {rhs}))", "bool"
 
     def _field_literal_compare(
-        self, field_name: str, field_type: str, op: str, value: str | float | bool | None
+        self, field_sql: str, field_type: str, op: str, value: str | float | bool | None
     ) -> tuple[str, str]:
         if value is None:
             if op == "==":
-                return f"isNull({field_name})", "bool"
+                return f"isNull({field_sql})", "bool"
             if op == "!=":
-                return f"isNotNull({field_name})", "bool"
+                return f"isNotNull({field_sql})", "bool"
             raise ValueError("null comparisons only support == and !=")
 
         if field_type == "String":
             if not isinstance(value, str):
-                raise ValueError(f"field {field_name} expects a string literal")
+                raise ValueError("string field expects a string literal")
             rhs = self._bind("field_str", "String", value)
-            return f"({field_name} {op} {rhs})", "bool"
+            return f"({field_sql} {op} {rhs})", "bool"
 
         if field_type == "Float64":
             if not isinstance(value, float):
-                raise ValueError(f"field {field_name} expects a numeric literal")
+                raise ValueError("numeric field expects a numeric literal")
             rhs = self._bind("field_num", "Float64", value)
-            return f"({field_name} {op} {rhs})", "bool"
+            return f"({field_sql} {op} {rhs})", "bool"
 
-        raise ValueError(f"unsupported field type for {field_name}")
+        raise ValueError(f"unsupported field type: {field_type}")
 
     def _describe_operand(self, node: Any) -> dict[str, Any]:
         if isinstance(node, _Literal):
@@ -441,9 +417,10 @@ class _CelToSqlCompiler:
             if len(node.parts) >= 2 and node.parts[0] == "metadata":
                 return {"kind": "metadata", "path": ".".join(node.parts[1:])}
             name = node.parts[0] if len(node.parts) == 1 else ""
-            if name not in PROMOTED_FIELDS:
+            if name not in CEL_FIELD_SQL:
                 raise ValueError(f"unknown field: {'.'.join(node.parts)}")
-            return {"kind": "field", "name": name, "type": PROMOTED_FIELDS[name]}
+            sql, typ = CEL_FIELD_SQL[name]
+            return {"kind": "field", "sql": sql, "type": typ}
         raise ValueError("unsupported comparison operand")
 
     def _bind(self, prefix: str, ch_type: str, value: Any) -> str:

@@ -66,8 +66,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  login: (secret: string) => request<void>('/api/login', { method: 'POST', body: JSON.stringify({ secret }) }),
-  logout: () => request<void>('/api/logout', { method: 'POST' }),
   me: () => request<{ authenticated: boolean; env: string | null }>('/api/me'),
   listCalls: (params: CallsListParams) => {
     const usp = new URLSearchParams();

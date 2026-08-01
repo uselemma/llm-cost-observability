@@ -1,308 +1,127 @@
 # llm-cost-observability
 
-LiteLLM proxy in front of Vercel AI Gateway and Fireworks AI, logging every request to a
-ClickHouse table.
+ClickHouse-backed cost dashboard for Cloudflare AI Gateway traffic.
 
-The point: every LLM call your services make gets a row in ClickHouse with
-cost, tokens, latency, model, and per-request tags (feature, prompt version,
-customer, A/B arm). You can answer "what did this feature cost last month?"
-in SQL.
-
-## Architecture
+LLM calls go through AI Gateway (`lemma-prod`). Gateway OTEL spans are ingested
+into ClickHouse by the `aig-otel-collector` (ENG-401). This repo is **query + UI
+only** — no LiteLLM proxy, no model routing, no write path.
 
 ```
-services ──▶ LiteLLM proxy ──▶ Vercel AI Gateway ──▶ provider
-                         └──▶ Fireworks AI
-              │
-              └── async insert ──▶ ClickHouse Cloud
+services ──▶ Cloudflare AI Gateway (lemma-prod)
+                    │ OTLP
+                    ▼
+             aig-otel-collector ──▶ ClickHouse aig.otel_traces
+                                              ▲
+engineer ──▶ Access SSO ──▶ aig-cost.uselemma.ai ──▶ FastAPI + SPA
 ```
-
-- **LiteLLM proxy** ([proxy/](proxy/)) — OpenAI-compatible endpoint. Auth via
-  static env-var keys (no Postgres). Every successful or failed call fires a
-  custom callback that writes one row to ClickHouse.
-- **ClickHouse** — analytics warehouse. Schema in [sql/001_litellm_logs.sql](sql/001_litellm_logs.sql).
-  Bodies (input messages, output text, reasoning) are stored alongside metrics
-  with ZSTD compression and a 180-day TTL.
-- **Client wrappers** ([client/](client/) for Python, snippet below for TS) —
-  point at the proxy, enforce a tagging contract.
 
 ## What's in here
 
 | Path | Purpose |
 |------|---------|
-| [proxy/config.yaml](proxy/config.yaml) | LiteLLM model list + auth wiring. Wildcard-routes Vercel AI Gateway models and Fireworks AI model IDs. |
-| [proxy/auth.py](proxy/auth.py) | Static-keys auth hook. Parses `LITELLM_KEYS` env var. |
-| [proxy/clickhouse_logger.py](proxy/clickhouse_logger.py) | `CustomLogger` callback that writes to ClickHouse. Async insert, swallows errors so a CH outage can't break LLM traffic. |
-| [proxy/Dockerfile](proxy/Dockerfile) | Extends `litellm:main-stable`, adds `uv`-installed deps. |
-| [docker-compose.yml](docker-compose.yml) | Runs the proxy locally. No DB sidecars — auth is env-var, ClickHouse is Cloud. |
-| [sql/001_litellm_logs.sql](sql/001_litellm_logs.sql) | Table DDL. |
-| [sql/queries.sql](sql/queries.sql) | Spend-by-model, cost-per-prompt, p95-by-feature, etc. |
-| [.claude/skills/](.claude/skills/) | Agent skills for integrating services and querying the data. |
+| [app/](app/) | FastAPI: `/api/*` over `aig.otel_traces` + static SPA |
+| [dashboard/](dashboard/) | React UI (calls table, filters, CEL, detail drawer) |
+| [sql/queries.sql](sql/queries.sql) | Example analytics SQL against OTEL spans |
+| [sql/001_litellm_logs.sql](sql/001_litellm_logs.sql) | **Archived** — old LiteLLM table DDL (table dropped) |
+| [.claude/skills/](.claude/skills/) | Agent skills: integrate via AI Gateway; query CH |
 
-## Setup (local dev and prod use the same path)
+## Data source
 
-ClickHouse Cloud is the only persistent dependency, and dev + prod both point
-at it (separate services or databases).
+Table: `aig.otel_traces`  
+Filter: `ServiceName = 'ai-gateway'`
 
-### 1. Configure environment
+| API / CallRow field | Span source |
+|---------------------|-------------|
+| `request_id` | `SpanId` |
+| `timestamp` | `Timestamp` |
+| `model` / `provider` | `gen_ai.request.model` / `gen_ai.model.provider` |
+| `spend_usd` | `gen_ai.usage.cost` |
+| `prompt_tokens` / `completion_tokens` | `gen_ai.usage.input_tokens` / `output_tokens` |
+| `latency_ms` | `Duration` (ns → ms) |
+| `tags` | rebuilt from `feature`, `prompt`, `variant`, `project_id` attrs |
+| `status` | `StatusCode` → `success` / `failure` |
+| `input_messages` / `output_text` | `gen_ai.prompt_json` / `gen_ai.completion_json` |
+
+Custom metadata from the `cf-aig-metadata` header lands as `SpanAttributes` keys
+(see integrate skill).
+
+## Local setup
+
+### 1. Env
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in:
-
 ```bash
-# Two keys, one per env. Generate fresh:
-#   echo "sk-$(openssl rand -hex 24):dev,sk-$(openssl rand -hex 24):prod"
-LITELLM_KEYS="sk-...:dev,sk-...:prod"
-
-VERCEL_AI_GATEWAY_API_KEY=...
-FIREWORKS_AI_API_KEY=...          # required for fireworks/* routes
-CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL=...
-CLOUDFLARE_AI_GATEWAY_API_TOKEN=...
-
 CLICKHOUSE_HOST=<your-instance>.clickhouse.cloud
-CLICKHOUSE_PORT=8443                # HTTPS port for clickhouse-connect
+CLICKHOUSE_PORT=8443
 CLICKHOUSE_USER=default
 CLICKHOUSE_PASSWORD=...
-CLICKHOUSE_DATABASE=default
+CLICKHOUSE_DATABASE=aig
 CLICKHOUSE_SECURE=true
 ```
 
-> The Cloud DSN you'll see in the UI uses port `9440` (native protocol). The
-> proxy uses HTTP(S), so use `8443` here. Same host, same creds.
+Use the **LLM** ClickHouse credentials (`LLM_CLICKHOUSE_*` in AWS Secrets
+Manager), not the product analytics cluster.
 
-### 2. Apply the schema
-
-In the ClickHouse Cloud SQL console, paste the contents of
-[sql/001_litellm_logs.sql](sql/001_litellm_logs.sql) and run.
-
-### 3. Start the proxy
+### 2. Run with Docker
 
 ```bash
 docker compose up --build
 ```
 
-Watch for `Uvicorn running on http://0.0.0.0:4000`.
+Open http://localhost:8000 — no login; auth is Access in prod only.
 
-### 4. Smoke test
-
-Send a chat completion. Use the `dev` half of `LITELLM_KEYS`:
+### 3. Run without Docker
 
 ```bash
-curl http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer sk-...DEV..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "anthropic/claude-opus-4.6",
-    "messages": [{"role": "user", "content": "hello in 5 words"}],
-    "metadata": {"tags": ["feature:smoke", "prompt:smoke-v1"]}
-  }'
+# API
+python -m venv .venv && source .venv/bin/activate
+pip install -r app/requirements.txt
+export $(grep -v '^#' .env | xargs)
+export PYTHONPATH=. DASHBOARD_DIST=dashboard/dist
+uvicorn app.main:app --reload --port 8000
+
+# Dashboard (separate terminal, optional for HMR)
+cd dashboard && npm ci && npm run build
+# or: npm run dev  (proxy /api to :8000 via vite.config)
 ```
 
-Streaming:
+## API
 
-```bash
-curl -N http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer sk-...DEV..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "anthropic/claude-opus-4.6",
-    "stream": true,
-    "messages": [{"role": "user", "content": "count to 5"}],
-    "metadata": {"tags": ["feature:smoke", "prompt:smoke-stream-v1"]}
-  }'
-```
+| Route | Notes |
+|-------|-------|
+| `GET /api/me` | Always `{ authenticated: true, env: null }` |
+| `GET /api/calls` | Filters: `since`, `until`, `model`, `status`, `tag`, `q`, `cel`, `limit`, `offset` |
+| `GET /api/calls/{span_id}` | Detail including message bodies |
+| `GET /api/models` | Distinct models, last 7 days |
+| `GET /api/tags` | Reconstructed `feature:` / `prompt:` / … tags, last 7 days |
+| `GET /api/cel-fields` | Fields allowed in CEL filters |
+| `GET /api/health` | Liveness |
 
-Verify the row landed:
+There is no `/api/login` or `/api/logout`.
 
-```sql
-SELECT timestamp, model, team, spend_usd, total_tokens, tags
-FROM litellm_logs
-ORDER BY timestamp DESC LIMIT 5;
-```
+## Deploy / Zero Trust (infra follow-up)
 
-You should see `team='dev'` and `tags` containing `env:dev`,
-`feature:smoke`, `prompt:smoke-v1`.
+Public hostname: **`aig-cost.uselemma.ai`**
 
-## Deploying to prod
+In `uselemma/infra` (or Zero Trust dashboard), when hosting this container:
 
-The proxy is stateless; deploy as you would any container.
+1. Deploy the image to the prod `lemma` namespace (port **8000**).
+2. Cloudflare Tunnel public hostname `aig-cost.uselemma.ai` → service `:8000`.
+3. Cloudflare Access application on that hostname — same IdP policy as
+   `argocd` / `temporal`.
+4. DNS CNAME → tunnel (proxied).
 
-1. Run two replicas behind a load balancer for redundancy (PRD §6 risk row 1).
-2. Set the same env vars; in prod, the `LITELLM_KEYS` `prod` half is the only
-   one services use. Rotate by updating the env var and redeploying.
-3. Apply [sql/001_litellm_logs.sql](sql/001_litellm_logs.sql) against your
-   prod ClickHouse Cloud service.
-4. Lock down: only the proxy should hold the `VERCEL_AI_GATEWAY_API_KEY`. Use
-   network policy to block direct Vercel calls from app services (PRD Phase 3).
+App env in the cluster: only
+`CLICKHOUSE_HOST/PORT/USER/PASSWORD/DATABASE=aig` (+ `CLICKHOUSE_SECURE=true`).
 
-## Integration
+In-app JWT validation of Access tokens is **out of scope** for v1 (same trust
+model as other internal tunnel + Access tools).
 
-### Models
+## Related
 
-The proxy wildcard-forwards anything under `vercel_ai_gateway/`. Clients can
-use either form:
-
-- `anthropic/claude-opus-4.6` ← short form (recommended)
-- `vercel_ai_gateway/anthropic/claude-opus-4.6` ← full slug
-
-Same patterns for `openai/`, `xai/`, `google/`. See [proxy/config.yaml](proxy/config.yaml).
-
-Fireworks AI routes use the `fireworks/` prefix and map to Fireworks' hosted
-`accounts/fireworks/models/<model-id>` names:
-
-- `fireworks/kimi-k2p6`
-- `fireworks/kimi-k2p5`
-- `fireworks/<any-fireworks-model-id>`
-
-Cloudflare AI Gateway routes use the `cloudflare/` prefix. Set
-`CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL` to the compat base URL, without the
-final `/chat/completions` path:
-
-`https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/compat`
-
-Use a Workers AI API token in `CLOUDFLARE_AI_GATEWAY_API_TOKEN`:
-
-- `cloudflare/kimi-k2.6`
-
-Direct DeepSeek API routes use the `deepseek/` prefix. Set
-`DEEPSEEK_API_KEY`, then call:
-
-- `deepseek/deepseek-v4-flash`
-
-For non-thinking responses on V4 Flash, pass DeepSeek's native flag:
-
-```json
-{
-  "thinking": { "type": "disabled" }
-}
-```
-
-Cost is computed automatically for any model in
-[LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
-For bleeding-edge models that aren't in the map yet (`spend_usd=0`), add an
-explicit `litellm_params.input_cost_per_token` / `output_cost_per_token`
-override for that model in the config.
-
-### Tag contract
-
-| Key | Required | Example |
-|-----|----------|---------|
-| `feature` | yes | `feature:summarization` |
-| `prompt` | yes | `prompt:summarize-v3` |
-| `customer` | when applicable | `customer:acme` |
-| `experiment` | when applicable | `experiment:concise-arm-b` |
-| `env` | **server-stamped** | `env:prod` (do not set client-side) |
-
-`env` is derived from the API key by the proxy's auth hook. Clients shouldn't
-include it — services in dev physically can't lie about being prod.
-
-### The contract
-
-The proxy is OpenAI-compatible. Send standard chat-completion requests with
-two additions:
-
-- **Auth.** `Authorization: Bearer ${LITELLM_API_KEY}` — the key whose env
-  half matches the service environment.
-- **Tags.** Add `metadata.tags` to the request body — an array of `key:value`
-  strings.
-
-A minimal request:
-
-```json
-POST /v1/chat/completions
-Authorization: Bearer sk-...
-
-{
-  "model": "anthropic/claude-opus-4.6",
-  "messages": [{"role": "user", "content": "..."}],
-  "metadata": {
-    "tags": [
-      "feature:summarization",
-      "prompt:summarize-v3",
-      "customer:acme"
-    ]
-  }
-}
-```
-
-Streaming (`"stream": true`) works identically; the logging callback fires
-exactly once at stream end, so you get one ClickHouse row either way.
-
-### Wrapping it
-
-Don't sprinkle raw HTTP calls. Build a thin wrapper per service (or per
-language) that:
-
-1. Reads `LITELLM_BASE_URL` and `LITELLM_API_KEY` from env.
-2. Takes a typed/validated `tags` argument with `feature` and `prompt`
-   required.
-3. Injects `metadata.tags` into the outgoing body.
-4. Otherwise passes through to whatever HTTP client or SDK the service
-   already uses (OpenAI SDK `extra_body`/`extraBody`, Vercel AI SDK with a
-   custom `fetch`, raw `fetch`/`requests`).
-
-The point is to make missing tags a compile-time or import-time error — a
-call without `feature:` and `prompt:` lands in ClickHouse with no
-attribution and becomes invisible in cost reports.
-
-For agent-driven implementation guidance, see the
-[llm-observability-integrate skill](.claude/skills/llm-observability-integrate/SKILL.md).
-
-## Operations
-
-### Common queries
-
-See [sql/queries.sql](sql/queries.sql) for the canonical set:
-- spend by model, current month
-- cost per prompt template, last 7 days
-- p95 latency by feature, last 24h
-- spend by customer
-- daily spend trend
-
-### Troubleshooting
-
-**`spend_usd=0`** — model isn't in LiteLLM's pricing map. Either pin to a
-priced model or add `input_cost_per_token` / `output_cost_per_token` to the
-model's `litellm_params`.
-
-**`401 invalid api key`** — bearer token doesn't match any entry in
-`LITELLM_KEYS`. Check the env var on the running container.
-
-**Row not landing in ClickHouse** — the callback swallows errors by design
-(LLM traffic must not break on a CH outage). Find the traceback in proxy
-logs:
-
-```bash
-docker compose logs litellm | grep clickhouse_logger
-```
-
-**Tags missing from row** — the auth hook injects `env:` server-side; client
-tags come from `metadata.tags` in the request body. Both should appear,
-deduped, in the `tags` array column. If only `env:` shows up, the client
-isn't sending `metadata.tags` — verify the request body.
-
-### Cost reconciliation
-
-LiteLLM's pricing is list price (or whatever you set in the config); your
-Vercel invoice is the ground truth. Reconcile monthly:
-
-```sql
-SELECT toStartOfMonth(timestamp) AS month, sum(spend_usd) AS our_estimate
-FROM litellm_logs WHERE status = 'success'
-GROUP BY month ORDER BY month DESC;
-```
-
-Compare against the upstream gateway invoice. Persistent delta = a known offset
-to document; sudden delta = something changed (new model, missing pricing entry).
-
-## Out of scope
-
-Per PRD §2, this project is observability-only. **Not** in here:
-- Hard budget enforcement (would need LiteLLM Enterprise tier).
-- A UI / debug browser. Engineers query ClickHouse directly via Grafana,
-  Metabase, or the Cloud SQL console.
-- Replacing gateway providers wholesale. Vercel remains the default provider
-  boundary; Cloudflare is configured only for explicit `cloudflare/` routes.
+- Ingest path: `infra/aig-otel-collector` (ENG-401)
+- Gateway: Cloudflare AI Gateway `lemma-prod`
+- Linear: [ENG-408](https://linear.app/uselemma/issue/ENG-408)

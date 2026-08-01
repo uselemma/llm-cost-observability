@@ -1,23 +1,14 @@
 services:
-  litellm:
+  dashboard:
     build:
       context: .
       dockerfile: Dockerfile
-    # Override the Dockerfile's $(nproc) so local dev uses 1 worker.
-    command: ["sh", "-c", "litellm --config /app/proxy/config.yaml --port 4000 --num_workers 1"]
     environment:
-      LITELLM_KEYS: ${LITELLM_KEYS}
-      VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      FIREWORKS_AI_API_KEY: ${FIREWORKS_AI_API_KEY:-}
-      CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL: ${CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL:-}
-      CLOUDFLARE_AI_GATEWAY_API_TOKEN: ${CLOUDFLARE_AI_GATEWAY_API_TOKEN:-}
       CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
       CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-8443}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-default}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-aig}
       CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-true}
-      DASHBOARD_COOKIE_SECURE: ${DASHBOARD_COOKIE_SECURE:-false}  # local dev = false
     ports:
-      - "4000:4000"
+      - "8000:8000"

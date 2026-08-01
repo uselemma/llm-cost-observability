@@ -1,3 +1,7 @@
+-- ARCHIVED (ENG-408). Historical DDL for the retired LiteLLM `litellm_logs`
+-- table. Live data is Cloudflare AI Gateway OTEL in `aig.otel_traces`.
+-- Do not create or write to litellm_logs. See sql/queries.sql for current SQL.
+
 CREATE TABLE IF NOT EXISTS litellm_logs (
     request_id          String,
     timestamp           DateTime64(3),

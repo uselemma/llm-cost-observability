@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,6 @@ type PageSizeOption = 100 | 250 | 500 | 'max';
 const DEFAULT_PAGE_SIZE: PageSizeOption = 100;
 
 export default function Calls() {
-  const qc = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: api.me });
   const [filters, setFilters] = useState<Filters>({ since: defaultSince() });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
@@ -55,27 +53,12 @@ export default function Calls() {
       <header className="flex items-center justify-between border-b bg-background px-4 py-3">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold tracking-tight">LLM call log</h1>
-          {me.data?.env && (
-            <span className="bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {me.data.env}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <ModeToggle />
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
             <RefreshCw className={isFetching ? 'animate-spin' : ''} />
             Refresh
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={async () => {
-              await api.logout();
-              qc.invalidateQueries();
-            }}
-          >
-            Sign out
           </Button>
         </div>
       </header>

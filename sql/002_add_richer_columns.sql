@@ -1,3 +1,5 @@
+-- ARCHIVED (ENG-408). Migration for the retired litellm_logs table.
+-- Live data is aig.otel_traces — do not apply this migration.
 -- Migration for tables created from the original 001 schema. Adds richer
 -- per-call fields. Idempotent — IF NOT EXISTS makes it safe to re-run.
 ALTER TABLE litellm_logs
