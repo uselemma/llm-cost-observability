@@ -9,8 +9,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import MessageCard, { type Message } from "@/components/message-card";
+import MessageCard from "@/components/message-card";
 import { parseApiTimestamp } from "@/lib/datetime";
+import {
+  parseInputMessages,
+  parseOutputMessages,
+} from "@/lib/parse-call-io";
 
 export default function CallDrawer({
   requestId,
@@ -24,7 +28,10 @@ export default function CallDrawer({
     queryFn: () => api.getCall(requestId),
   });
 
-  const inputMessages = data ? parseMessages(data.input_messages) : [];
+  const inputMessages = data ? parseInputMessages(data.input_messages) : [];
+  const outputMessages = data
+    ? parseOutputMessages(data.output_text || "")
+    : [];
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -116,8 +123,8 @@ export default function CallDrawer({
 
             <Section title="Input">
               {inputMessages.length === 0 ? (
-                <pre className="bg-muted p-3 font-mono text-[11px]">
-                  {data.input_messages}
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words bg-muted p-3 font-mono text-[11px]">
+                  {data.input_messages || "—"}
                 </pre>
               ) : (
                 <div className="space-y-2">
@@ -128,7 +135,7 @@ export default function CallDrawer({
               )}
             </Section>
 
-            {(data.output_text ||
+            {(outputMessages.length > 0 ||
               data.reasoning_content ||
               data.tool_calls) && (
               <Section title="Output">
@@ -141,15 +148,20 @@ export default function CallDrawer({
                       }}
                     />
                   )}
-                  <MessageCard
-                    message={{
-                      role: "assistant",
-                      content: data.output_text || null,
-                      tool_calls: data.tool_calls
-                        ? safeJson(data.tool_calls)
-                        : undefined,
-                    }}
-                  />
+                  {outputMessages.map((m, i) => (
+                    <MessageCard
+                      key={i}
+                      message={{
+                        ...m,
+                        // Legacy separate tool_calls column when present.
+                        tool_calls:
+                          m.tool_calls ??
+                          (i === 0 && data.tool_calls
+                            ? safeJson(data.tool_calls)
+                            : undefined),
+                      }}
+                    />
+                  ))}
                 </div>
               </Section>
             )}
@@ -228,17 +240,6 @@ function tokensPerSecond({
 function formatTps(tps: number | null): string {
   if (tps == null || !Number.isFinite(tps)) return "—";
   return `${tps >= 10 ? tps.toFixed(0) : tps.toFixed(1)} tok/s`;
-}
-
-function parseMessages(raw: string): Message[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    if (Array.isArray(v)) return v as Message[];
-    return [];
-  } catch {
-    return [];
-  }
 }
 
 function safeJson(s: string): unknown {
