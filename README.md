@@ -12,7 +12,7 @@ services ──▶ Cloudflare AI Gateway (lemma-prod)
                     ▼
              aig-otel-collector ──▶ ClickHouse aig.otel_traces
                                               ▲
-engineer ──▶ Access SSO ──▶ aig-cost.uselemma.ai ──▶ FastAPI + SPA
+engineer ──▶ Access SSO ──▶ aig-observability.uselemma.ai ──▶ FastAPI + SPA
 ```
 
 ## What's in here
@@ -104,12 +104,12 @@ There is no `/api/login` or `/api/logout`.
 
 ## Deploy / Zero Trust (infra follow-up)
 
-Public hostname: **`aig-cost.uselemma.ai`**
+Public hostname: **`aig-observability.uselemma.ai`**
 
 In `uselemma/infra` (or Zero Trust dashboard), when hosting this container:
 
 1. Deploy the image to the prod `lemma` namespace (port **8000**).
-2. Cloudflare Tunnel public hostname `aig-cost.uselemma.ai` → service `:8000`.
+2. Cloudflare Tunnel public hostname `aig-observability.uselemma.ai` → service `:8000`.
 3. Cloudflare Access application on that hostname — same IdP policy as
    `argocd` / `temporal`.
 4. DNS CNAME → tunnel (proxied).
