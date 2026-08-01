@@ -11,10 +11,10 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # Repo-owned package (same pattern as uselemma/platform/{api,core}).
-  # Do not publish under uselemma/platform/* from this repo — Packages API
-  # cannot manage that path and the cluster pull PAT gets 403.
-  IMAGE_NAME: ${{ github.repository }}/aig-observability
+  # Exact OWNER/REPO name so GHCR auto-links the package to this repository.
+  # Nested names (…/aig-observability) pushed fine but Packages API could not
+  # find them to grant the cluster pull identity.
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-push:
@@ -34,16 +34,40 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:aig-observability
       - name: Ensure org can pull package
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PKG="llm-cost-observability%2Faig-observability"
-          # Prefer internal so org-entitled PATs can pull without making it public.
+          set -euo pipefail
+          PKG="llm-cost-observability"
+          echo "Listing org container packages visible to GITHUB_TOKEN:"
+          gh api "/orgs/uselemma/packages?package_type=container&per_page=100" \
+            --jq '.[].name' || true
+
+          # Packages API can lag the registry push by a few seconds.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if gh api "/orgs/uselemma/packages/container/${PKG}" --jq .name; then
+              break
+            fi
+            echo "package not visible yet (attempt $i); sleeping 3s"
+            sleep 3
+          done
+
+          # Internal = org-entitled PATs with read:packages can pull.
           gh api --method PATCH \
             "/orgs/uselemma/packages/container/${PKG}" \
             -f visibility=internal
-          # Cluster pull secret uses jason136 (same as platform/api).
+
+          # Cluster pull secret authenticates as jason136 (same as platform/api).
           gh api --method PUT \
             "/orgs/uselemma/packages/container/${PKG}/access/jason136" \
             -f permission=read
+
+          # Inherit repository collaborators/visibility when supported.
+          gh api --method PUT \
+            "/orgs/uselemma/packages/container/${PKG}/access/uselemma/llm-cost-observability" \
+            -f permission=read || true
+
+          echo "Verify GITHUB_TOKEN can pull:"
+          docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
