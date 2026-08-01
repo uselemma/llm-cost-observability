@@ -25,5 +25,17 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/uselemma/llm-cost-observability:latest
-            ghcr.io/uselemma/llm-cost-observability:${{ github.sha }}
+            ghcr.io/uselemma/platform/aig-observability:latest
+            ghcr.io/uselemma/platform/aig-observability:${{ github.sha }}
+      - name: Ensure org can pull package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Internal = any org member / entitled PATs with read:packages for org
+          gh api --method PATCH \
+            "/orgs/uselemma/packages/container/platform%2Faig-observability" \
+            -f visibility=internal || true
+          # Grant the GHCR pull user used by clusters (same as platform/api)
+          gh api --method PUT \
+            "/orgs/uselemma/packages/container/platform%2Faig-observability/access/jason136" \
+            -f permission=read || true
