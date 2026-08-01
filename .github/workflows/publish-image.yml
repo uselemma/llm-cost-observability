@@ -9,6 +9,13 @@ permissions:
   contents: read
   packages: write
 
+env:
+  REGISTRY: ghcr.io
+  # Repo-owned package (same pattern as uselemma/platform/{api,core}).
+  # Do not publish under uselemma/platform/* from this repo — Packages API
+  # cannot manage that path and the cluster pull PAT gets 403.
+  IMAGE_NAME: ${{ github.repository }}/aig-observability
+
 jobs:
   build-push:
     runs-on: ubuntu-latest
@@ -17,7 +24,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
@@ -25,17 +32,18 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/uselemma/platform/aig-observability:latest
-            ghcr.io/uselemma/platform/aig-observability:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
       - name: Ensure org can pull package
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Internal = any org member / entitled PATs with read:packages for org
+          PKG="llm-cost-observability%2Faig-observability"
+          # Prefer internal so org-entitled PATs can pull without making it public.
           gh api --method PATCH \
-            "/orgs/uselemma/packages/container/platform%2Faig-observability" \
-            -f visibility=internal || true
-          # Grant the GHCR pull user used by clusters (same as platform/api)
+            "/orgs/uselemma/packages/container/${PKG}" \
+            -f visibility=internal
+          # Cluster pull secret uses jason136 (same as platform/api).
           gh api --method PUT \
-            "/orgs/uselemma/packages/container/platform%2Faig-observability/access/jason136" \
-            -f permission=read || true
+            "/orgs/uselemma/packages/container/${PKG}/access/jason136" \
+            -f permission=read

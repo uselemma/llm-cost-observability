@@ -94,4 +94,4 @@ LIMIT 5;
 You should see your `feature` / `prompt` and a non-null model. Cost may be `0`
 if the provider did not return token usage.
 
-Also check the UI at https://aig-cost.uselemma.ai (Cloudflare Access).
+Also check the UI at https://aig-observability.uselemma.ai (Cloudflare Access).
