@@ -5,20 +5,17 @@ RUN npm ci || npm install
 COPY dashboard/ .
 RUN npm run build
 
-FROM ghcr.io/astral-sh/uv:0.10.9 AS uv
-
-FROM ghcr.io/berriai/litellm:main-stable
-COPY --from=uv /uv /usr/local/bin/uv
+FROM python:3.12-slim
 
 WORKDIR /app
-COPY proxy/requirements.txt .
-RUN uv pip install --python /app/.venv/bin/python --no-cache -r requirements.txt
 
-COPY proxy /app/proxy
+COPY app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app /app/app
 COPY --from=dashboard /dashboard/dist /app/dashboard_dist
 
 ENV PYTHONPATH=/app DASHBOARD_DIST=/app/dashboard_dist
-EXPOSE 4000
+EXPOSE 8000
 
-ENTRYPOINT []
-CMD ["sh", "-c", "litellm --config /app/proxy/config.yaml --port 4000 --num_workers $(nproc)"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

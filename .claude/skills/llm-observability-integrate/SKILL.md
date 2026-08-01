@@ -1,177 +1,97 @@
 ---
 name: llm-observability-integrate
-description: Use when adding a new LLM call to a service, or wiring an existing service to the company LiteLLM proxy so its calls get logged to ClickHouse. Triggers when the user mentions calling Claude/GPT/an LLM, "instrument" or "add observability" to LLM calls, switching from a direct provider SDK to the proxy, or asks how to send tags. Don't use this for general LLM-coding questions unrelated to our proxy.
+description: Use when adding a new LLM call to a service, or wiring a service to Cloudflare AI Gateway so calls appear in aig.otel_traces / the cost dashboard. Triggers when the user mentions calling Claude/GPT/an LLM, "instrument" or "add observability" to LLM calls, cf-aig-metadata, AI Gateway, or asks how to send feature/prompt tags. Don't use for general LLM-coding questions unrelated to our gateway.
 ---
 
-# Integrating a service with the LLM cost observability proxy
+# Integrating a service with Cloudflare AI Gateway (cost observability)
 
-All LLM traffic at this company goes through a self-hosted LiteLLM proxy that
-sits in front of Vercel AI Gateway. The proxy logs every request to ClickHouse
-with cost, tokens, latency, bodies, and per-request tags. Direct calls to
-provider SDKs (`openai`, `anthropic`) or to Vercel AI Gateway bypass that
-logging and **must not** be added to new code.
+All LLM traffic goes through **Cloudflare AI Gateway** (`lemma-prod`). The
+gateway exports GenAI OTEL spans to ClickHouse (`aig.otel_traces`) via the
+`aig-otel-collector` (ENG-401). The cost dashboard in
+https://github.com/uselemma/llm-cost-observability reads that table.
 
-The full project lives at https://github.com/uselemma/llm-cost-observability.
+There is **no LiteLLM proxy**. Do not point new code at a LiteLLM base URL or
+write to `litellm_logs`.
 
-This skill describes the integration **contract** — what the proxy expects
-on the wire — not a specific client library. Implement it in whatever
-language and HTTP/SDK style fits the service you're working in.
+In Lemma services, prefer the shared helper in `shared/common/ts/ai/tracing.ts`
+(or the equivalent Python helper) — it already sets gateway URL, auth, and
+`cf-aig-metadata`.
 
 ## The contract
 
-1. **Endpoint.** The proxy is OpenAI-compatible at
-   `${LITELLM_BASE_URL}/v1/chat/completions` (and `/v1/completions`,
-   `/v1/embeddings`, etc.). Any OpenAI-format request body works.
-2. **Auth.** `Authorization: Bearer ${LITELLM_API_KEY}`. Each environment has
-   its own key — dev services hold the dev key, prod services hold the prod
-   key. The proxy stamps the matching `env:dev` or `env:prod` tag onto every
-   row from that key, so a service physically can't lie about its env.
-3. **Model name.** Pass either the short form `<provider>/<model>` (e.g.
-   `anthropic/claude-opus-4.6`, `openai/gpt-4.1`, `fireworks/kimi-k2p6`) or
-   the full Vercel slug `vercel_ai_gateway/<provider>/<model>`. A bare model
-   name without a provider prefix won't route.
-4. **Tags.** Add `metadata.tags` to the request body — an array of
-   `key:value` strings. `feature` and `prompt` are required; `customer` and
-   `experiment` are optional; `env` is **server-stamped, do not set**.
-   Unknown keys are reserved.
-5. **Streaming.** `stream: true` works. The proxy fires its logging callback
-   exactly once at stream end, so streaming and non-streaming each produce
-   one ClickHouse row.
+1. **Endpoint.** OpenAI-compatible (or provider-native) URL through AI Gateway,
+   e.g. `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/compat/...`
+   or the provider path (`/anthropic/...`, `/openai/...`).
+2. **Auth.** Gateway token (`CF_AIG_TOKEN` / account secrets) — not a LiteLLM key.
+3. **Metadata (tags).** Send a JSON object on the `cf-aig-metadata` header.
+   Keys become `SpanAttributes` in ClickHouse. Required for attribution:
+   `feature` and `prompt`. Optional: `variant`, `project_id`, and other
+   low-cardinality keys (CF caps the number of metadata keys per request).
+4. **Trace linking (optional).** `cf-aig-otel-trace-id` /
+   `cf-aig-otel-parent-span-id` nest the gateway span under your app trace.
 
-A complete, minimal request:
+Minimal example:
 
-```json
-POST /v1/chat/completions
-Authorization: Bearer sk-...
-
-{
-  "model": "anthropic/claude-opus-4.6",
-  "messages": [{"role": "user", "content": "..."}],
-  "metadata": {
-    "tags": [
-      "feature:summarization",
-      "prompt:summarize-v3",
-      "customer:acme"
-    ]
-  }
-}
+```bash
+curl "https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${CF_AIG_GATEWAY_ID}/compat/chat/completions" \
+  -H "Authorization: Bearer ${CF_AIG_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H 'cf-aig-metadata: {"feature":"summarization","prompt":"summarize-v3","variant":"default"}' \
+  -d '{"model":"anthropic/claude-sonnet-4-5","messages":[{"role":"user","content":"..."}]}'
 ```
 
-That's the entire contract. Everything below is guidance on how to apply it
-correctly.
-
-## Implementation guidance
-
-### Pick a tag-aware wrapper, don't sprinkle raw HTTP calls
-
-Whatever language you're in, build (or reuse) a thin layer that:
-
-1. Holds the base URL and API key from env vars (`LITELLM_BASE_URL`,
-   `LITELLM_API_KEY`).
-2. Takes a typed/validated `tags` argument with `feature` and `prompt`
-   required.
-3. Injects `metadata.tags` into the outgoing request body.
-4. Otherwise passes through to whatever HTTP client or SDK the service
-   already uses (OpenAI SDK, Vercel AI SDK, `requests`, `fetch`, etc.).
-
-The point is to make missing-tag a compile-time or import-time error, not a
-silent runtime hole. A call without `feature:` and `prompt:` will land in
-ClickHouse with no attribution and become invisible in cost reports.
-
-### Vercel AI SDK (TypeScript) — fetch wrapper pattern
-
-The OpenAI-compatible provider doesn't expose a clean per-call "extra body"
-hook in every version. Inject tags via a custom `fetch`:
-
-```ts
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-
-function fetchWithTags(tags: Record<string, string>): typeof fetch {
-  const arr = Object.entries(tags).map(([k, v]) => `${k}:${v}`);
-  return async (input, init) => {
-    const body = init?.body ? JSON.parse(init.body as string) : {};
-    body.metadata = {
-      ...(body.metadata ?? {}),
-      tags: [...(body.metadata?.tags ?? []), ...arr],
-    };
-    return fetch(input, { ...init, body: JSON.stringify(body) });
-  };
-}
-
-const provider = createOpenAICompatible({
-  name: 'litellm',
-  baseURL: process.env.LITELLM_BASE_URL!,
-  apiKey: process.env.LITELLM_API_KEY!,
-  fetch: fetchWithTags({ feature: 'summarization', prompt: 'summarize-v3' }),
-});
-```
-
-### OpenAI SDK (any language) — `extra_body` / `extraBody`
-
-Most OpenAI SDK builds support an `extra_body` (Python) or `extraBody`
-(JS/TS) parameter that gets merged into the request body verbatim. Pass
-`{"metadata": {"tags": [...]}}` there.
-
-### Raw HTTP
-
-Just put `metadata.tags` in the JSON body. It really is that simple.
-
-## Tag conventions
+## Tag / metadata conventions
 
 | Key | Required | Example | Notes |
 |-----|----------|---------|-------|
-| `feature` | yes | `feature:summarization` | The product feature making the call. Pick a stable name; don't use IDs. |
-| `prompt` | yes | `prompt:summarize-v3` | Specific prompt template + version. Bump the version when the prompt body changes. |
-| `customer` | when applicable | `customer:acme` | Tenant ID for multi-tenant cost attribution. |
-| `experiment` | when applicable | `experiment:concise-arm-b` | A/B arm. |
-| `env` | **don't set** | `env:prod` | Server-stamped from the API key. |
+| `feature` | yes | `signal-pipeline` | Product feature. Stable name, not an ID. |
+| `prompt` | yes | `summarize-v3` | Prompt template + version. |
+| `variant` | when applicable | `structured` | A/B or prompt arm. |
+| `project_id` | when applicable | uuid | Tenant / project attribution. |
 
-Keep tag values low-cardinality. **Never** put request IDs, user emails, or
-free-form text into tags — they explode ClickHouse cardinality and degrade
-queries. The `metadata` JSON column is the escape hatch for high-cardinality
-fields you want to keep around for ad-hoc queries.
+Keep values **low-cardinality**. Never put request IDs, emails, or free-form
+text in metadata — they explode cardinality.
 
-## Model naming
+The dashboard rebuilds tags as `feature:…`, `prompt:…`, `variant:…`,
+`project_id:…` for filters.
 
-The proxy wildcard-routes any Vercel AI Gateway model. Two equivalent forms:
+## TypeScript — use the shared tracer
 
-- `anthropic/claude-opus-4.6` ← short, recommended
-- `vercel_ai_gateway/anthropic/claude-opus-4.6` ← full slug
+```ts
+// Prefer shared/common/ts/ai/tracing.ts (or your service's wrap of it).
+// It sets cf-aig-metadata from { feature, prompt, variant, project_id, ... }.
+```
 
-Same patterns for `openai/`, `xai/`, `google/`. Fireworks-hosted models use
-the `fireworks/` prefix, e.g. `fireworks/kimi-k2p6`. See
-[proxy/config.yaml](../../proxy/config.yaml).
+If you must call the gateway directly, attach:
 
-Cost is computed automatically for any model in [LiteLLM's pricing map](https://github.com/BerriAI/litellm/blob/main/litellm/model_prices_and_context_window_backup.json).
-For models too new to be in the map, `spend_usd` will be 0 — flag that to the
-user; they need to add `input_cost_per_token` / `output_cost_per_token`
-overrides to the model's `litellm_params` in [proxy/config.yaml](../../proxy/config.yaml).
-
-## Common mistakes to avoid
-
-- **Bypassing the proxy** by importing `openai`/`@ai-sdk/openai` directly
-  with a provider key. New code should not do this.
-- **Setting `env:` client-side.** It's server-stamped from the API key.
-- **Forgetting the version on `prompt:`.** A prompt's identity is its
-  template + version. Without the version, you can't compare v2 vs v3 cost.
-- **Putting customer email or user ID into a tag.** Use `customer:<tenant_id>`
-  with a stable, low-cardinality identifier.
-- **Skipping the wrapper** and calling the proxy with raw `fetch`/`requests`.
-  That works, but you lose tag validation and will eventually ship a call
-  with no `feature:` tag, which is invisible in cost reports.
+```ts
+headers: {
+  'cf-aig-metadata': JSON.stringify({
+    feature: 'summarization',
+    prompt: 'summarize-v3',
+  }),
+}
+```
 
 ## Verifying it worked
 
-After your first call, query the table to confirm:
+After a call, in ClickHouse (database `aig`):
 
 ```sql
-SELECT timestamp, model, team, spend_usd, total_tokens, tags
-FROM litellm_logs
-WHERE timestamp >= now() - INTERVAL 5 MINUTE
-ORDER BY timestamp DESC LIMIT 5;
+SELECT
+  Timestamp,
+  SpanAttributes['gen_ai.request.model'] AS model,
+  SpanAttributes['feature'] AS feature,
+  SpanAttributes['prompt'] AS prompt,
+  toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS spend_usd
+FROM otel_traces
+WHERE ServiceName = 'ai-gateway'
+  AND Timestamp >= now() - INTERVAL 5 MINUTE
+ORDER BY Timestamp DESC
+LIMIT 5;
 ```
 
-You should see your call with `team='dev'` (or `prod`), non-zero
-`spend_usd`, and `tags` containing `env:dev`, your `feature:`, and your
-`prompt:`. If `tags` only has `env:`, the request body wasn't carrying
-`metadata.tags` — check the wrapper.
+You should see your `feature` / `prompt` and a non-null model. Cost may be `0`
+if the provider did not return token usage.
+
+Also check the UI at https://aig-cost.uselemma.ai (Cloudflare Access).
