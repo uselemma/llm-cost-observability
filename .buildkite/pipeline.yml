@@ -1,0 +1,3 @@
+steps:
+  - label: ":pipeline: Upload"
+    command: buildkite-agent pipeline upload .buildkite/pipelines/publish.yml
