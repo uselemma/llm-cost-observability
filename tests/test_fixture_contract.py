@@ -39,6 +39,7 @@ class DocumentedSpanFixtureTests(unittest.TestCase):
             self.assertIn(attribute, self.projection)
 
     def test_attempts_are_not_roots_and_have_detail_fields(self) -> None:
+        self.assertIn("toJSONString(SpanAttributes) AS metadata", ATTEMPTS_SELECT)
         for attempt in self.fixture["attempts"]:
             self.assertTrue(attempt["parent_span_id"])
             for attribute in attempt["span_attributes"]:

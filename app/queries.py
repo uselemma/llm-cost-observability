@@ -118,7 +118,17 @@ def logical_calls_cte(source_where: str = "") -> str:
             ) AS status,
             if(
                 vercel_attrs['gen_ai.response.finish_reasons'] != '',
-                vercel_attrs['gen_ai.response.finish_reasons'],
+                if(
+                    JSONExtractString(
+                        vercel_attrs['gen_ai.response.finish_reasons'],
+                        1
+                    ) != '',
+                    JSONExtractString(
+                        vercel_attrs['gen_ai.response.finish_reasons'],
+                        1
+                    ),
+                    vercel_attrs['gen_ai.response.finish_reasons']
+                ),
                 ''
             ) AS finish_reason,
             exact_cache_hit,
@@ -262,7 +272,7 @@ LIST_SELECT = f"""
     {PROVIDER_EXPR} AS provider,
     '' AS team,
     {STATUS_EXPR} AS status,
-    '' AS finish_reason,
+    finish_reason,
     {SPEND_EXPR} AS spend_usd,
     {PROMPT_TOKENS_EXPR} AS prompt_tokens,
     {COMPLETION_TOKENS_EXPR} AS completion_tokens,
@@ -289,7 +299,7 @@ DETAIL_SELECT = f"""
     {PROVIDER_EXPR} AS provider,
     '' AS team,
     {STATUS_EXPR} AS status,
-    '' AS finish_reason,
+    finish_reason,
     {SPEND_EXPR} AS spend_usd,
     {PROMPT_TOKENS_EXPR} AS prompt_tokens,
     {COMPLETION_TOKENS_EXPR} AS completion_tokens,
@@ -357,7 +367,8 @@ ATTEMPTS_SELECT = """
         SpanAttributes['vercel.ai_gateway.attempt.configured_timeout_ms']
     ) AS configured_timeout_ms,
     SpanAttributes['vercel.ai_gateway.credential.type'] AS credential_type,
-    SpanAttributes['vercel.ai_gateway.region'] AS region
+    SpanAttributes['vercel.ai_gateway.region'] AS region,
+    toJSONString(SpanAttributes) AS metadata
 """
 
 # Map CEL field names → (ClickHouse SQL expression, type).

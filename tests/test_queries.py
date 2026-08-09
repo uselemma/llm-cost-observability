@@ -4,6 +4,8 @@ import unittest
 
 from app.queries import (
     CF_EXACT_CACHE_HIT_EXPR,
+    DETAIL_SELECT,
+    LIST_SELECT,
     RAW_CALL_ID_EXPR,
     ROOT_FILTER,
     VERCEL_TAG_CALL_ID_EXPR,
@@ -48,6 +50,10 @@ class LogicalCallsQueryTests(unittest.TestCase):
             "vercel.ai_gateway.zdr.requested",
         ):
             self.assertIn(vercel_field, self.sql)
+
+    def test_final_outcome_is_retained_in_list_and_detail(self) -> None:
+        self.assertIn("finish_reason", LIST_SELECT)
+        self.assertIn("finish_reason", DETAIL_SELECT)
 
     def test_unreconciled_cost_is_excluded(self) -> None:
         self.assertIn("'unreconciled'", self.sql)

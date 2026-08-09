@@ -43,6 +43,7 @@ export type ProviderAttempt = {
   configured_timeout_ms: number;
   credential_type: string;
   region: string;
+  metadata: string;
 };
 
 export type CallDetail = CallRow & {
