@@ -15,7 +15,10 @@ const DEFAULT_PAGE_SIZE: PageSizeOption = 100;
 
 export default function Calls() {
   const [filters, setFilters] = useState<Filters>({ since: defaultSince() });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedCall, setSelectedCall] = useState<{
+    id: string;
+    timestamp: string;
+  } | null>(null);
   const [pageSize, setPageSize] = useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
   const isMaxMode = pageSize === 'max';
   const requestLimit = isMaxMode ? 0 : pageSize;
@@ -72,7 +75,7 @@ export default function Calls() {
         ) : (
           <CallsTable
             rows={rows}
-            onSelect={setSelectedId}
+            onSelect={(id, timestamp) => setSelectedCall({ id, timestamp })}
             loading={isFetching && rows.length === 0}
             hasMore={!!hasNextPage}
             loadingMore={isFetchingNextPage}
@@ -83,7 +86,13 @@ export default function Calls() {
         )}
       </main>
 
-      {selectedId && <CallDrawer requestId={selectedId} onClose={() => setSelectedId(null)} />}
+      {selectedCall && (
+        <CallDrawer
+          requestId={selectedCall.id}
+          timestamp={selectedCall.timestamp}
+          onClose={() => setSelectedCall(null)}
+        />
+      )}
     </div>
   );
 }

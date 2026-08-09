@@ -1,0 +1,64 @@
+{
+  "call_id": "018f1d13-a976-7d30-8c68-8f6f785d9a50",
+  "cloudflare_root": {
+    "span_id": "cf-root",
+    "resource_attributes": {
+      "service.name": "ai-gateway"
+    },
+    "span_attributes": {
+      "call_id": "018f1d13-a976-7d30-8c68-8f6f785d9a50",
+      "feature": "signal-pipeline",
+      "prompt": "behavior-issue-explorer-v1",
+      "project_id": "project-1",
+      "experiment_variant": "[\"experiment-1\",\"structured\"]",
+      "gen_ai.prompt_json": "[{\"role\":\"user\",\"content\":\"hello\"}]",
+      "gen_ai.completion_json": "[{\"role\":\"assistant\",\"content\":\"hi\"}]",
+      "gen_ai.request.model": "deepseek/deepseek-v4-flash"
+    }
+  },
+  "vercel_root": {
+    "span_id": "vercel-root",
+    "resource_attributes": {
+      "service.name": "ai-gateway",
+      "service.namespace": "vercel"
+    },
+    "span_attributes": {
+      "vercel.ai_gateway.tags": "[\"call:018f1d13-a976-7d30-8c68-8f6f785d9a50\",\"feature:signal-pipeline\"]",
+      "vercel.ai_gateway.provider": "deepseek",
+      "vercel.ai_gateway.generation.id": "gen_123",
+      "vercel.ai_gateway.credential.type": "byok",
+      "vercel.ai_gateway.cost.total": "0.000042",
+      "vercel.ai_gateway.cost.market": "0.000050",
+      "vercel.ai_gateway.region": "iad1",
+      "vercel.ai_gateway.zdr.requested": "true",
+      "gen_ai.response.model": "deepseek/deepseek-v4-flash",
+      "gen_ai.usage.input_tokens": "12",
+      "gen_ai.usage.output_tokens": "8",
+      "gen_ai.usage.reasoning.output_tokens": "2",
+      "gen_ai.usage.cache_read.input_tokens": "4",
+      "gen_ai.usage.cache_creation.input_tokens": "1",
+      "gen_ai.response.time_to_first_chunk": "0.125"
+    }
+  },
+  "attempts": [
+    {
+      "span_id": "routing",
+      "parent_span_id": "vercel-root",
+      "name": "vercel.ai_gateway.routing",
+      "span_attributes": {
+        "vercel.ai_gateway.routing.custom_provider_order": "deepseek"
+      }
+    },
+    {
+      "span_id": "provider-attempt",
+      "parent_span_id": "vercel-root",
+      "name": "deepseek/deepseek-v4-flash (deepseek)",
+      "span_attributes": {
+        "gen_ai.provider.name": "deepseek",
+        "vercel.ai_gateway.attempt.id": "attempt_1",
+        "vercel.ai_gateway.attempt.number": "1",
+        "vercel.ai_gateway.attempt.success": "true"
+      }
+    }
+  ]
+}

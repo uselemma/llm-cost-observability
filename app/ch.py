@@ -11,26 +11,32 @@ from clickhouse_connect.driver.client import Client
 def _clickhouse_settings() -> dict[str, object]:
     """Prefer CLICKHOUSE_*; fall back to LLM_CLICKHOUSE_* from lemma env secret."""
     host = os.environ.get("CLICKHOUSE_HOST", "").strip()
-    port = os.environ.get("CLICKHOUSE_PORT", "").strip()
-    user = os.environ.get("CLICKHOUSE_USER", "").strip()
-    password = os.environ.get("CLICKHOUSE_PASSWORD", "")
-    database = os.environ.get("CLICKHOUSE_DATABASE", "").strip()
-    secure_raw = os.environ.get("CLICKHOUSE_SECURE", "").strip()
+    using_explicit_config = bool(host)
+    port = os.environ.get("CLICKHOUSE_PORT", "").strip() if using_explicit_config else ""
+    user = os.environ.get("CLICKHOUSE_USER", "").strip() if using_explicit_config else ""
+    password = os.environ.get("CLICKHOUSE_PASSWORD", "") if using_explicit_config else ""
+    database = (
+        os.environ.get("CLICKHOUSE_DATABASE", "").strip()
+        if using_explicit_config
+        else ""
+    )
+    secure_raw = (
+        os.environ.get("CLICKHOUSE_SECURE", "").strip()
+        if using_explicit_config
+        else ""
+    )
 
     url = os.environ.get("LLM_CLICKHOUSE_URL", "").strip()
-    if url and not host:
+    if url and not using_explicit_config:
         parsed = urlparse(url)
         host = parsed.hostname or ""
-        if not port and parsed.port:
+        if parsed.port:
             port = str(parsed.port)
-        if not secure_raw:
-            secure_raw = "true" if parsed.scheme == "https" else "false"
+        secure_raw = "true" if parsed.scheme == "https" else "false"
 
-    if not user:
+    if not using_explicit_config:
         user = os.environ.get("LLM_CLICKHOUSE_USER", "").strip()
-    if not password:
         password = os.environ.get("LLM_CLICKHOUSE_PASSWORD", "")
-    if not database:
         database = os.environ.get("LLM_CLICKHOUSE_DATABASE", "aig").strip() or "aig"
 
     if not host:

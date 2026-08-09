@@ -17,6 +17,32 @@ export type CallRow = {
   ttft_ms: number;
   tags: string[];
   output_preview: string;
+  reconciliation_status: 'reconciled' | 'cache_hit' | 'legacy' | 'unreconciled';
+  is_complete: number;
+  reconciliation_overdue: number;
+  reconciliation_ms: number;
+  cost_included: number;
+  exact_cache_hit: number;
+};
+
+export type ProviderAttempt = {
+  span_id: string;
+  parent_span_id: string;
+  name: string;
+  kind: string;
+  status: string;
+  error_message: string;
+  latency_ms: number;
+  model: string;
+  provider: string;
+  model_attempt_index: number;
+  attempt_number: number;
+  attempt_id: string;
+  attempt_success: string;
+  provider_timeout: string;
+  configured_timeout_ms: number;
+  credential_type: string;
+  region: string;
 };
 
 export type CallDetail = CallRow & {
@@ -33,6 +59,18 @@ export type CallDetail = CallRow & {
   output_text: string;
   reasoning_content: string;
   tool_calls: string;
+  call_id: string;
+  cloudflare_span_id: string;
+  vercel_span_id: string;
+  app_trace_id: string;
+  billed_cost_usd: number;
+  market_cost_usd: number;
+  vercel_latency_ms: number;
+  generation_id: string;
+  credential_type: string;
+  region: string;
+  zdr_requested: string;
+  attempts: ProviderAttempt[];
 };
 
 export type CallsListParams = {
@@ -83,7 +121,12 @@ export const api = {
     });
     return request<{ rows: CallRow[]; limit: number; offset: number }>(`/api/calls?${usp}`);
   },
-  getCall: (id: string) => request<CallDetail>(`/api/calls/${encodeURIComponent(id)}`),
+  getCall: (id: string, timestamp?: string) => {
+    const query = timestamp
+      ? `?timestamp=${encodeURIComponent(normalizeDateTimeParam(timestamp))}`
+      : '';
+    return request<CallDetail>(`/api/calls/${encodeURIComponent(id)}${query}`);
+  },
   listModels: () => request<{ models: string[] }>('/api/models'),
   listTags: () => request<{ tags: string[] }>('/api/tags'),
   listCelFields: () => request<{ fields: string[] }>('/api/cel-fields'),
