@@ -2,9 +2,10 @@
 
 ClickHouse-backed cost dashboard for Cloudflare AI Gateway traffic.
 
-LLM calls go through AI Gateway (`lemma-prod`). Gateway OTEL spans are ingested
-into ClickHouse by the `aig-otel-collector` (ENG-401). This repo is **query + UI
-only** — no LiteLLM proxy, no model routing, no write path.
+LLM calls go through AI Gateway (`lemma-prod`). Cloudflare and Vercel Gateway
+OTEL spans are ingested into ClickHouse by the `aig-otel-collector`
+(ENG-401/ENG-657). This repo is **query + UI only** — no LiteLLM proxy, no
+model routing, no write path.
 
 ```
 services ──▶ Cloudflare AI Gateway (lemma-prod)
@@ -44,6 +45,21 @@ Filter: `ServiceName = 'ai-gateway'`
 
 Custom metadata from the `cf-aig-metadata` header lands as `SpanAttributes` keys
 (see integrate skill).
+
+### Dual-gateway logical calls
+
+`app/queries.py` groups Cloudflare and Vercel request roots by `call_id`.
+Cloudflare remains canonical for content, timestamp, app trace, attribution, and
+exact-cache state. Vercel is canonical for provider, generation, credential,
+cost, detailed tokens, region, TTFC, and ZDR. Routing/model/provider attempt
+spans are excluded from the list and returned only in call detail.
+
+Rows with only one root are `unreconciled` and carry
+`cost_included: false`, preventing ambiguous cost from entering loaded-row
+aggregates. Legacy Cloudflare rows without `call_id` retain the old behavior.
+An exact cache hit is complete with zero new upstream cost only when Cloudflare
+exports an explicit `HIT` cache attribute; absence of Vercel telemetry is never
+treated as proof of a cache hit.
 
 ## Local setup
 
@@ -94,7 +110,8 @@ cd dashboard && npm ci && npm run build
 |-------|-------|
 | `GET /api/me` | Always `{ authenticated: true, env: null }` |
 | `GET /api/calls` | Filters: `since`, `until`, `model`, `status`, `tag`, `q`, `cel`, `limit`, `offset` |
-| `GET /api/calls/{span_id}` | Detail including message bodies |
+| `GET /api/calls/{request_id}` | Logical-call detail including message bodies and Vercel attempt spans |
+| `GET /api/reconciliation` | Reconciliation completeness, overdue calls, p99 delay, and 99%/2-minute SLO state |
 | `GET /api/models` | Distinct models, last 7 days |
 | `GET /api/tags` | Reconstructed `feature:` / `prompt:` / … tags, last 7 days |
 | `GET /api/cel-fields` | Fields allowed in CEL filters |

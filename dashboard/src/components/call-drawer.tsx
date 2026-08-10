@@ -18,14 +18,16 @@ import {
 
 export default function CallDrawer({
   requestId,
+  timestamp,
   onClose,
 }: {
   requestId: string;
+  timestamp: string;
   onClose: () => void;
 }) {
   const { data, isPending, error } = useQuery({
-    queryKey: ["call", requestId],
-    queryFn: () => api.getCall(requestId),
+    queryKey: ["call", requestId, timestamp],
+    queryFn: () => api.getCall(requestId, timestamp),
   });
 
   const inputMessages = data ? parseInputMessages(data.input_messages) : [];
@@ -60,6 +62,12 @@ export default function CallDrawer({
           <div className="space-y-5 px-6 pb-6">
             {(data.model || data.tags?.length > 0) && (
               <div className="flex flex-wrap gap-1.5">
+                <Badge
+                  variant={data.is_complete ? "outline" : "destructive"}
+                  className="font-mono text-[11px]"
+                >
+                  {data.reconciliation_status.replace("_", " ")}
+                </Badge>
                 {data.model && (
                   <Badge variant="secondary" className="font-mono text-[11px]">
                     {data.model}
@@ -82,7 +90,15 @@ export default function CallDrawer({
               <Stat label="Status" value={data.status} />
               <Stat label="Finish" value={data.finish_reason || "—"} />
               <Stat label="Env" value={data.team || "—"} />
-              <Stat label="Cost" value={`$${data.spend_usd.toFixed(6)}`} />
+              <Stat
+                label="Cost"
+                value={
+                  data.cost_included
+                    ? `$${data.spend_usd.toFixed(6)}`
+                    : "excluded (unreconciled)"
+                }
+              />
+              <Stat label="Market cost" value={`$${data.market_cost_usd.toFixed(6)}`} />
               <Stat
                 label="Tokens"
                 value={`${formatTokenCount(data.prompt_tokens)} → ${formatTokenCount(outputTokenCount(data))}`}
@@ -101,6 +117,21 @@ export default function CallDrawer({
                 label="TTFT"
                 value={data.ttft_ms ? `${data.ttft_ms} ms` : "—"}
               />
+              <Stat
+                label="Reconcile"
+                value={
+                  data.reconciliation_status === "reconciled"
+                    ? `${data.reconciliation_ms} ms`
+                    : data.reconciliation_status.replace("_", " ")
+                }
+              />
+              <Stat label="Region" value={data.region || "—"} />
+              <Stat label="Credential" value={data.credential_type || "—"} />
+              <Stat label="Generation" value={data.generation_id || "—"} />
+              <Stat
+                label="ZDR"
+                value={data.zdr_requested === "" ? "—" : data.zdr_requested}
+              />
             </div>
 
             <Section title="Metadata">
@@ -117,6 +148,42 @@ export default function CallDrawer({
               <pre className="whitespace-pre-wrap border border-destructive/40 bg-destructive/10 p-3 text-[11px] text-destructive">
                 {data.error_message}
               </pre>
+            )}
+
+            {data.attempts.length > 0 && (
+              <Section title="Routing & provider attempts">
+                <div className="space-y-2">
+                  {data.attempts.map((attempt) => (
+                    <div
+                      key={attempt.span_id}
+                      className="grid grid-cols-2 gap-x-4 gap-y-1 border bg-muted/50 p-3 text-xs md:grid-cols-4"
+                    >
+                      <Stat label="Span" value={attempt.name} />
+                      <Stat label="Status" value={attempt.status} />
+                      <Stat label="Provider" value={attempt.provider || "—"} />
+                      <Stat label="Model" value={attempt.model || "—"} />
+                      <Stat label="Latency" value={`${attempt.latency_ms} ms`} />
+                      <Stat
+                        label="Attempt"
+                        value={
+                          attempt.attempt_number
+                            ? String(attempt.attempt_number)
+                            : attempt.model_attempt_index
+                              ? String(attempt.model_attempt_index)
+                              : "—"
+                        }
+                      />
+                      <Stat label="Region" value={attempt.region || "—"} />
+                      <Stat label="Credential" value={attempt.credential_type || "—"} />
+                      {attempt.error_message && (
+                        <div className="col-span-full text-destructive">
+                          {attempt.error_message}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Section>
             )}
 
             <Separator />

@@ -34,7 +34,7 @@ export default function CallsTable({
   onPageSizeChange,
 }: {
   rows: CallRow[];
-  onSelect: (id: string) => void;
+  onSelect: (id: string, timestamp: string) => void;
   loading: boolean;
   hasMore: boolean;
   loadingMore: boolean;
@@ -62,7 +62,7 @@ export default function CallsTable({
 
   const aggregates = rows.reduce(
     (acc, row) => {
-      acc.cost += row.spend_usd;
+      if (row.cost_included) acc.cost += row.spend_usd;
       acc.cacheRead += tokenValue(row.cache_read_tokens);
       acc.cacheCreation += tokenValue(row.cache_creation_tokens);
       return acc;
@@ -101,13 +101,18 @@ export default function CallsTable({
             return (
             <TableRow
               key={r.request_id}
-              onClick={() => onSelect(r.request_id)}
+              onClick={() => onSelect(r.request_id, r.timestamp)}
               className="cursor-pointer"
             >
               <TableCell className="tabular-nums text-muted-foreground">
                 {fmtTime(r.timestamp)}
               </TableCell>
-              <TableCell><TagPills tags={r.tags} /></TableCell>
+              <TableCell>
+                <div className="flex flex-wrap gap-1">
+                  <ReconciliationBadge row={r} />
+                  <TagPills tags={r.tags} />
+                </div>
+              </TableCell>
               <TableCell className="truncate font-mono text-xs">{r.model}</TableCell>
               <TableCell>{statusBadge(r.status, r.finish_reason)}</TableCell>
               <TableCell className="text-right tabular-nums">${r.spend_usd.toFixed(5)}</TableCell>
@@ -337,6 +342,36 @@ function TagPills({ tags }: { tags: string[] }) {
         </Badge>
       ))}
     </div>
+  );
+}
+
+function ReconciliationBadge({ row }: { row: CallRow }) {
+  if (row.reconciliation_status === 'legacy') return null;
+  if (row.reconciliation_status === 'reconciled') {
+    return (
+      <Badge variant="outline" className="font-mono text-[10px]">
+        reconciled
+      </Badge>
+    );
+  }
+  if (row.reconciliation_status === 'cache_hit') {
+    return (
+      <Badge variant="outline" className="font-mono text-[10px]">
+        exact cache
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      className={cn(
+        'font-mono text-[10px]',
+        row.reconciliation_overdue
+          ? 'bg-red-700 text-red-50 hover:bg-red-700'
+          : 'bg-amber-600 text-amber-50 hover:bg-amber-600',
+      )}
+    >
+      unreconciled
+    </Badge>
   );
 }
 

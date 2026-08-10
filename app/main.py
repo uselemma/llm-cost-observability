@@ -17,14 +17,18 @@ from fastapi.staticfiles import StaticFiles
 from app.cel_filter import compile_cel_filter, list_queryable_cel_fields
 from app.ch import get_client
 from app.queries import (
+    ATTEMPTS_SELECT,
     DETAIL_SELECT,
     INPUT_MESSAGES_EXPR,
     LIST_SELECT,
     MODEL_EXPR,
     OUTPUT_TEXT_EXPR,
+    RAW_CALL_ID_EXPR,
     SERVICE_FILTER,
     STATUS_EXPR,
     TAGS_EXPR,
+    VERCEL_SOURCE_EXPR,
+    logical_calls_cte,
 )
 
 DASHBOARD_DIST = Path(os.environ.get("DASHBOARD_DIST", "dashboard/dist"))
@@ -75,17 +79,21 @@ async def list_calls(
         limit = max(1, limit)
         offset = max(0, offset)
 
-    where: list[str] = [SERVICE_FILTER]
+    where: list[str] = []
+    source_where: list[str] = []
     params: dict[str, Any] = {}
 
     if since:
-        where.append("Timestamp >= {since:DateTime64(3)}")
+        source_where.append("Timestamp >= subtractMinutes({since:DateTime64(3)}, 2)")
+        where.append("timestamp >= {since:DateTime64(3)}")
         params["since"] = _parse_query_datetime(since, "since")
     else:
-        where.append("Timestamp >= now() - INTERVAL 24 HOUR")
+        source_where.append("Timestamp >= now() - INTERVAL 24 HOUR - INTERVAL 2 MINUTE")
+        where.append("timestamp >= now() - INTERVAL 24 HOUR")
 
     if until:
-        where.append("Timestamp <= {until:DateTime64(3)}")
+        source_where.append("Timestamp <= addMinutes({until:DateTime64(3)}, 2)")
+        where.append("timestamp <= {until:DateTime64(3)}")
         params["until"] = _parse_query_datetime(until, "until")
     if model:
         where.append(f"{MODEL_EXPR} = {{model:String}}")
@@ -121,14 +129,15 @@ async def list_calls(
         )
         params["q"] = q
 
-    where_sql = " AND ".join(where)
+    where_sql = " AND ".join(where) if where else "1"
     pagination_sql = "" if fetch_all else f"LIMIT {limit} OFFSET {offset}"
 
     sql = f"""
+        {logical_calls_cte(" AND ".join(source_where))}
         SELECT {LIST_SELECT}
-        FROM otel_traces
+        FROM logical_calls
         WHERE {where_sql}
-        ORDER BY Timestamp DESC
+        ORDER BY timestamp DESC
         {pagination_sql}
     """
 
@@ -141,23 +150,50 @@ async def list_calls(
 
 
 @app.get("/api/calls/{request_id}")
-async def get_call(request_id: str) -> dict[str, Any]:
+async def get_call(request_id: str, timestamp: str | None = None) -> dict[str, Any]:
     client = get_client()
+    params: dict[str, Any] = {"rid": request_id}
+    source_selector = f"({RAW_CALL_ID_EXPR} = {{rid:String}} OR SpanId = {{rid:String}})"
+    if timestamp:
+        params["selected_timestamp"] = _parse_query_datetime(timestamp, "timestamp")
+        source_selector = (
+            "Timestamp >= subtractMinutes({selected_timestamp:DateTime64(3)}, 2) "
+            "AND Timestamp <= addMinutes({selected_timestamp:DateTime64(3)}, 2) "
+            f"AND {source_selector}"
+        )
     result = client.query(
         f"""
+        {logical_calls_cte(source_selector)}
         SELECT {DETAIL_SELECT}
-        FROM otel_traces
-        WHERE {SERVICE_FILTER}
-          AND SpanId = {{rid:String}}
-        ORDER BY Timestamp DESC
+        FROM logical_calls
+        WHERE request_id = {{rid:String}}
         LIMIT 1
         """,
-        parameters={"rid": request_id},
+        parameters=params,
     )
     if not result.result_rows:
         raise HTTPException(status_code=404, detail="not found")
     row = dict(zip(result.column_names, result.result_rows[0]))
     row["timestamp"] = _iso_timestamp(row.get("timestamp"))
+    trace_ids = row.pop("vercel_trace_ids", [])
+    row["attempts"] = []
+    if trace_ids:
+        attempts_result = client.query(
+            f"""
+            SELECT {ATTEMPTS_SELECT}
+            FROM otel_traces
+            WHERE {SERVICE_FILTER}
+              AND {VERCEL_SOURCE_EXPR}
+              AND TraceId IN {{trace_ids:Array(String)}}
+              AND NOT empty(ParentSpanId)
+            ORDER BY Timestamp, SpanId
+            """,
+            parameters={"trace_ids": trace_ids},
+        )
+        row["attempts"] = [
+            dict(zip(attempts_result.column_names, attempt))
+            for attempt in attempts_result.result_rows
+        ]
     return row
 
 
@@ -166,12 +202,12 @@ async def list_tags() -> dict[str, Any]:
     client = get_client()
     result = client.query(
         f"""
+        {logical_calls_cte("Timestamp >= now() - INTERVAL 7 DAY - INTERVAL 2 MINUTE")}
         SELECT DISTINCT t
         FROM (
             SELECT {TAGS_EXPR} AS tags
-            FROM otel_traces
-            WHERE {SERVICE_FILTER}
-              AND Timestamp >= now() - INTERVAL 7 DAY
+            FROM logical_calls
+            WHERE timestamp >= now() - INTERVAL 7 DAY
         )
         ARRAY JOIN tags AS t
         ORDER BY t
@@ -185,16 +221,71 @@ async def list_models() -> dict[str, Any]:
     client = get_client()
     result = client.query(
         f"""
+        {logical_calls_cte("Timestamp >= now() - INTERVAL 7 DAY - INTERVAL 2 MINUTE")}
         SELECT {MODEL_EXPR} AS model, count() AS n
-        FROM otel_traces
-        WHERE {SERVICE_FILTER}
-          AND Timestamp >= now() - INTERVAL 7 DAY
+        FROM logical_calls
+        WHERE timestamp >= now() - INTERVAL 7 DAY
           AND {MODEL_EXPR} != ''
         GROUP BY model
         ORDER BY n DESC
         """
     )
     return {"models": [r[0] for r in result.result_rows]}
+
+
+@app.get("/api/reconciliation")
+async def reconciliation_metrics(
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    """Canary/SLO metrics for dual-gateway calls with a shared call_id."""
+    params: dict[str, Any] = {}
+    source_where = ["Timestamp >= now() - INTERVAL 24 HOUR - INTERVAL 2 MINUTE"]
+    projected_where = ["timestamp >= now() - INTERVAL 24 HOUR"]
+    if since:
+        params["since"] = _parse_query_datetime(since, "since")
+        source_where = ["Timestamp >= subtractMinutes({since:DateTime64(3)}, 2)"]
+        projected_where = ["timestamp >= {since:DateTime64(3)}"]
+    if until:
+        params["until"] = _parse_query_datetime(until, "until")
+        source_where.append("Timestamp <= addMinutes({until:DateTime64(3)}, 2)")
+        projected_where.append("timestamp <= {until:DateTime64(3)}")
+
+    client = get_client()
+    result = client.query(
+        f"""
+        {logical_calls_cte(" AND ".join(source_where))}
+        SELECT
+            count() AS identified_calls,
+            countIf(reconciliation_status = 'reconciled') AS reconciled_calls,
+            countIf(reconciliation_status = 'cache_hit') AS exact_cache_hits,
+            countIf(reconciliation_status = 'unreconciled') AS unreconciled_calls,
+            countIf(reconciliation_overdue = 1) AS overdue_calls,
+            countIf(
+                timestamp <= now64(3) - INTERVAL 2 MINUTE
+            ) AS matured_calls,
+            countIf(
+                timestamp <= now64(3) - INTERVAL 2 MINUTE
+                AND is_complete = 1
+            ) AS matured_complete_calls,
+            if(
+                matured_calls = 0,
+                1.,
+                matured_complete_calls / matured_calls
+            ) AS completeness_after_2m,
+            quantileExactIf(0.99)(
+                reconciliation_ms,
+                reconciliation_status = 'reconciled'
+            ) AS p99_reconciliation_ms,
+            toUInt8(completeness_after_2m >= 0.99) AS meets_99pct_2m_slo
+        FROM logical_calls
+        WHERE call_id != ''
+          AND {" AND ".join(projected_where)}
+        """,
+        parameters=params,
+    )
+    row = dict(zip(result.column_names, result.result_rows[0]))
+    return row
 
 
 @app.get("/api/cel-fields")
