@@ -1,0 +1,26 @@
+steps:
+  - label: ":docker: Publish image"
+    agents: { queue: builders }
+    command: |
+      set -euo pipefail
+      chmod +x .buildkite/scripts/*.sh
+      eval "$$(.buildkite/scripts/load-github-token.sh)"
+      echo "$$GHCR_TOKEN" | docker login ghcr.io --username "$$GHCR_USERNAME" --password-stdin
+      IMAGE="ghcr.io/uselemma/llm-cost-observability"
+      docker buildx create --use --name lemma-lco --driver docker-container 2>/dev/null || docker buildx use lemma-lco
+      docker buildx build \
+        --platform linux/amd64 \
+        --tag "$${IMAGE}:latest" \
+        --tag "$${IMAGE}:$${BUILDKITE_COMMIT}" \
+        --tag "$${IMAGE}:aig-observability" \
+        --push \
+        .
+      PKG="llm-cost-observability"
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        gh api "/orgs/uselemma/packages/container/$${PKG}" --jq .name && break
+        sleep 3
+      done
+      gh api --method PATCH "/orgs/uselemma/packages/container/$${PKG}" -f visibility=internal
+      gh api --method PUT "/orgs/uselemma/packages/container/$${PKG}/access/jason136" -f permission=read
+      gh api --method PUT "/orgs/uselemma/packages/container/$${PKG}/access/uselemma/llm-cost-observability" -f permission=read || true
+      docker pull "$${IMAGE}:latest"
