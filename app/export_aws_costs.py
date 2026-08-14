@@ -22,26 +22,36 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Sequence
 
-from app.aws_costs import DEFAULT_LOOKBACK_DAYS, AwsCostRow, get_daily_costs
-from app.cost_export import run_export
-from app.dash0_export import GaugeSpec, PublishResult, publish_gauges
+from app.aws_costs import AwsCostRow, get_daily_costs
+from app.cost_export import DEFAULT_LOOKBACK_DAYS, GaugeBinding, run_export
 
 METRIC = "aws.cost.unblended"
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+SERVICE_NAME = "aws-cost-exporter"
 log = logging.getLogger("export_aws_costs")
 
 
-def publish_aws_cost_gauges(rows: Sequence[AwsCostRow]) -> PublishResult:
-    spec = GaugeSpec(
+def aws_cost_attributes(row: AwsCostRow) -> dict[str, str]:
+    return {
+        "aws.account.id": row.account_id,
+        "aws.account.name": row.account_name,
+        "aws.service.name": row.service,
+        "aws.cost.date": row.date,
+    }
+
+
+def _format_row(row: AwsCostRow) -> str:
+    return f"dry-run {row.date} {row.account_name} {row.service} ${row.amount_usd:.4f}"
+
+
+AWS_COST_GAUGES: tuple[GaugeBinding[AwsCostRow], ...] = (
+    GaugeBinding(
         name=METRIC,
         unit="USD",
         description="AWS daily UnblendedCost by service and account",
-        points=[row.gauge_point() for row in rows],
-    )
-    return publish_gauges([spec], default_service_name="aws-cost-exporter")
+        value=lambda row: row.amount_usd,
+    ),
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,14 +63,14 @@ def main(argv: list[str] | None = None) -> int:
         dry_run_help="Fetch CE only; do not export to Dash0",
         fetch_failed="cost explorer failed",
         fetch=get_daily_costs,
-        format_row=lambda row: (
-            f"dry-run {row.date} {row.account_name} {row.service} ${row.amount_usd:.4f}"
-        ),
-        publish=publish_aws_cost_gauges,
-        published_label=METRIC,
+        format_row=_format_row,
+        attributes=aws_cost_attributes,
+        gauges=AWS_COST_GAUGES,
+        service_name=SERVICE_NAME,
         log=log,
     )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     sys.exit(main())

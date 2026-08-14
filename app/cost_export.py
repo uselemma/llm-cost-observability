@@ -1,4 +1,9 @@
-"""Shared window, report, and CLI loop for one-shot cost → Dash0 exporters."""
+"""Shared window, report, and CLI loop for one-shot cost → Dash0 exporters.
+
+Both CronJobs are the same machine: resolve a UTC day window, fetch rows, then
+either preview them or turn each row into one or more OTLP gauges. Domain
+modules fetch; exporter modules declare metric schema as GaugeBinding data.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,9 +14,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Generic, TypeVar
 
-from app.dash0_export import PublishResult
+from app.dash0_export import GaugeSpec, publish_gauges
 
 T = TypeVar("T")
+
+DEFAULT_LOOKBACK_DAYS = 14
+_DRY_RUN_PREVIEW = 20
 
 
 class CostExportError(Exception):
@@ -41,6 +49,16 @@ class CostReport(Generic[T]):
     rows: Sequence[T]
     window: CostWindow
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GaugeBinding(Generic[T]):
+    """How one OTLP gauge is projected from a cost row."""
+
+    name: str
+    unit: str
+    description: str
+    value: Callable[[T], float]
 
 
 def parse_day(value: str, field: str) -> date:
@@ -82,6 +100,23 @@ def lookback_days_from_env(name: str, default: int) -> int:
         return default
 
 
+def build_gauge_specs(
+    rows: Sequence[T],
+    gauges: Sequence[GaugeBinding[T]],
+    attributes: Callable[[T], dict[str, str]],
+) -> list[GaugeSpec]:
+    """Project rows onto the declared gauges. One spec per binding, one point per row."""
+    return [
+        GaugeSpec(
+            name=gauge.name,
+            unit=gauge.unit,
+            description=gauge.description,
+            points=[(gauge.value(row), attributes(row)) for row in rows],
+        )
+        for gauge in gauges
+    ]
+
+
 def run_export(
     argv: list[str] | None,
     *,
@@ -92,8 +127,9 @@ def run_export(
     fetch_failed: str,
     fetch: Callable[[str | None, str | None, int], CostReport[T]],
     format_row: Callable[[T], str],
-    publish: Callable[[Sequence[T]], PublishResult],
-    published_label: str,
+    attributes: Callable[[T], dict[str, str]],
+    gauges: Sequence[GaugeBinding[T]],
+    service_name: str,
     log: logging.Logger,
 ) -> int:
     parser = argparse.ArgumentParser(description=description)
@@ -114,29 +150,38 @@ def run_export(
         log.error("%s: %s", fetch_failed, exc)
         return 1
 
+    error_note = f"; errors={'; '.join(report.errors)}" if report.errors else ""
     log.info(
         "fetched %d rows (%s .. %s)%s",
         len(report.rows),
         report.window.since,
         report.window.until,
-        f"; account errors={'; '.join(report.errors)}" if report.errors else "",
+        error_note,
     )
 
     if args.dry_run:
-        preview = list(report.rows[:20])
+        preview = list(report.rows[:_DRY_RUN_PREVIEW])
         for row in preview:
             log.info("%s", format_row(row))
-        if len(report.rows) > 20:
-            log.info("... %d more rows", len(report.rows) - 20)
-        return 0 if report.rows or not report.errors else 1
+        extra = len(report.rows) - len(preview)
+        if extra:
+            log.info("... %d more rows", extra)
+        return 1 if report.errors and not report.rows else 0
 
-    result = publish(report.rows)
+    result = publish_gauges(
+        build_gauge_specs(report.rows, gauges, attributes),
+        default_service_name=service_name,
+    )
     if not result.ok:
         log.error("dash0 export failed: %s", result.reason)
         return 1
 
-    log.info("published %d %s to Dash0", result.points, published_label)
+    log.info(
+        "published %d %s to Dash0",
+        result.points,
+        " / ".join(gauge.name for gauge in gauges),
+    )
     if report.errors:
         log.warning("partial fetch failures: %s", "; ".join(report.errors))
-        return 0 if result.points else 1
+        return 1 if not result.points else 0
     return 0

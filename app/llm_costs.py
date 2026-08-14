@@ -13,10 +13,15 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.ch import get_client
-from app.cost_export import CostExportError, CostReport, resolve_range
-from app.queries import logical_calls_cte
-
-DEFAULT_LOOKBACK_DAYS = 14
+from app.cost_export import DEFAULT_LOOKBACK_DAYS, CostExportError, CostReport, resolve_range
+from app.queries import (
+    FEATURE_EXPR,
+    MODEL_EXPR,
+    PROVIDER_EXPR,
+    SPEND_EXPR,
+    STATUS_EXPR,
+    logical_calls_cte,
+)
 
 
 @dataclass(frozen=True)
@@ -27,14 +32,6 @@ class LlmCostRow:
     feature: str
     spend_usd: float
     calls: int
-
-    def gauge_attributes(self) -> dict[str, str]:
-        return {
-            "llm.cost.date": self.date,
-            "gen_ai.request.model": self.model,
-            "gen_ai.provider.name": self.provider,
-            "feature": self.feature,
-        }
 
 
 class LlmCostError(CostExportError):
@@ -58,16 +55,17 @@ def get_daily_costs(
         "Timestamp >= subtractMinutes({start:DateTime}, 2)"
         " AND Timestamp < addMinutes({end:DateTime}, 2)"
     )
-    query = logical_calls_cte(source_where) + """
+    rollup = f"""
     SELECT
         toString(toDate(timestamp)) AS day,
-        if(model = '', 'unknown', model) AS model_out,
-        if(provider = '', 'unknown', provider) AS provider_out,
-        if(SpanAttributes['feature'] = '', 'untagged',
-           SpanAttributes['feature']) AS feature_out,
-        sum(spend_usd) AS total_spend_usd,
-        countIf(status = 'success') AS success_calls
+        if({MODEL_EXPR} = '', 'unknown', {MODEL_EXPR}) AS model_out,
+        if({PROVIDER_EXPR} = '', 'unknown', {PROVIDER_EXPR}) AS provider_out,
+        if({FEATURE_EXPR} = '', 'untagged', {FEATURE_EXPR}) AS feature_out,
+        sum({SPEND_EXPR}) AS total_spend_usd,
+        countIf({STATUS_EXPR} = 'success') AS success_calls
     FROM logical_calls
+    """
+    query = logical_calls_cte(source_where) + rollup + """
     WHERE toDate(timestamp) >= toDate({start:DateTime})
       AND toDate(timestamp) < toDate({end:DateTime})
     GROUP BY day, model_out, provider_out, feature_out

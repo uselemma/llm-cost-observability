@@ -4,8 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.cost_export import CostWindowError
-from app.export_llm_costs import publish_llm_cost_gauges
+from app.cost_export import CostWindowError, build_gauge_specs
+from app.export_llm_costs import LLM_COST_GAUGES, llm_cost_attributes
 from app.llm_costs import LlmCostError, LlmCostRow, get_daily_costs
 
 
@@ -62,15 +62,9 @@ class GaugeSpecTests(unittest.TestCase):
             spend_usd=1.25,
             calls=4,
         )
-        with patch("app.export_llm_costs.publish_gauges") as publish:
-            publish_llm_cost_gauges([row])
-
-        specs = publish.call_args.args[0]
+        specs = build_gauge_specs([row], LLM_COST_GAUGES, llm_cost_attributes)
         self.assertEqual(
             [spec.name for spec in specs], ["llm.cost.estimated", "llm.calls"]
-        )
-        self.assertEqual(
-            publish.call_args.kwargs["default_service_name"], "llm-cost-exporter"
         )
 
         expected_attributes = {

@@ -9,6 +9,8 @@ from unittest.mock import patch
 from app.cost_export import (
     CostReport,
     CostWindowError,
+    GaugeBinding,
+    build_gauge_specs,
     lookback_days_from_env,
     resolve_range,
     run_export,
@@ -16,6 +18,29 @@ from app.cost_export import (
 from app.dash0_export import PublishResult
 
 WINDOW_DAYS = 14
+
+
+def _run(argv: list[str], **overrides) -> int:  # noqa: ANN003
+    window = resolve_range("2026-08-01", "2026-08-01", 14)
+
+    def fetch(since, until, days):  # noqa: ANN001
+        return CostReport(rows=["row"], window=window)
+
+    kwargs = dict(
+        description="t",
+        lookback_env="AWS_COST_LOOKBACK_DAYS",
+        default_lookback=14,
+        dry_run_help="dry",
+        fetch_failed="failed",
+        fetch=fetch,
+        format_row=str,
+        attributes=lambda row: {"k": str(row)},
+        gauges=(GaugeBinding("metric", "1", "d", lambda row: 1.0),),
+        service_name="test-exporter",
+        log=logging.getLogger("test_export"),
+    )
+    kwargs.update(overrides)
+    return run_export(argv, **kwargs)
 
 
 class ResolveRangeTests(unittest.TestCase):
@@ -69,48 +94,53 @@ class LookbackEnvTests(unittest.TestCase):
                 self.assertEqual(lookback_days_from_env("AWS_COST_LOOKBACK_DAYS", 14), 14)
 
 
+class BuildGaugeSpecsTests(unittest.TestCase):
+    def test_each_binding_becomes_one_spec_sharing_row_attributes(self) -> None:
+        gauges = (
+            GaugeBinding("spend", "USD", "d", lambda row: row["usd"]),
+            GaugeBinding("n", "{call}", "d", lambda row: float(row["n"])),
+        )
+        specs = build_gauge_specs(
+            [{"usd": 1.25, "n": 4}],
+            gauges,
+            lambda row: {"feature": "issue"},
+        )
+        self.assertEqual([spec.name for spec in specs], ["spend", "n"])
+        self.assertEqual(specs[0].points, [(1.25, {"feature": "issue"})])
+        self.assertEqual(specs[1].points, [(4.0, {"feature": "issue"})])
+
+
 class RunExportTests(unittest.TestCase):
     def test_dry_run_skips_publish_and_succeeds_when_rows_exist(self) -> None:
-        published: list[object] = []
-        window = resolve_range("2026-08-01", "2026-08-01", 14)
-
-        def fetch(since, until, days):  # noqa: ANN001
-            return CostReport(rows=["row"], window=window)
-
-        code = run_export(
-            ["--dry-run", "--since", "2026-08-01", "--until", "2026-08-01"],
-            description="t",
-            lookback_env="AWS_COST_LOOKBACK_DAYS",
-            default_lookback=14,
-            dry_run_help="dry",
-            fetch_failed="failed",
-            fetch=fetch,
-            format_row=str,
-            publish=lambda rows: published.append(rows) or PublishResult(True, points=1),
-            published_label="metric",
-            log=logging.getLogger("test_export"),
-        )
+        with patch("app.cost_export.publish_gauges") as publish:
+            code = _run(["--dry-run", "--since", "2026-08-01", "--until", "2026-08-01"])
         self.assertEqual(code, 0)
-        self.assertEqual(published, [])
+        publish.assert_not_called()
 
     def test_fetch_errors_become_exit_one(self) -> None:
         def fetch(since, until, days):  # noqa: ANN001
             raise CostWindowError("until must be on or after since")
 
-        code = run_export(
+        code = _run(
             ["--since", "2026-08-31", "--until", "2026-08-01"],
-            description="t",
-            lookback_env="AWS_COST_LOOKBACK_DAYS",
-            default_lookback=14,
-            dry_run_help="dry",
-            fetch_failed="failed",
             fetch=fetch,
-            format_row=str,
-            publish=lambda rows: PublishResult(True, points=0),
-            published_label="metric",
-            log=logging.getLogger("test_export"),
         )
         self.assertEqual(code, 1)
+
+    def test_publish_uses_declared_gauges_and_service_name(self) -> None:
+        with patch(
+            "app.cost_export.publish_gauges",
+            return_value=PublishResult(ok=True, points=1),
+        ) as publish:
+            code = _run(["--since", "2026-08-01", "--until", "2026-08-01"])
+
+        self.assertEqual(code, 0)
+        specs = publish.call_args.args[0]
+        self.assertEqual([spec.name for spec in specs], ["metric"])
+        self.assertEqual(specs[0].points, [(1.0, {"k": "row"})])
+        self.assertEqual(
+            publish.call_args.kwargs["default_service_name"], "test-exporter"
+        )
 
 
 if __name__ == "__main__":

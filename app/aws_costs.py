@@ -10,16 +10,25 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from app.cost_export import CostExportError, CostReport, CostWindow, resolve_range
+from app.cost_export import (
+    DEFAULT_LOOKBACK_DAYS,
+    CostExportError,
+    CostReport,
+    resolve_range,
+)
 
 CE_REGION = "us-east-1"
 DEFAULT_ACCOUNTS = "prod:806880857007,dev:121881624000"
-DEFAULT_LOOKBACK_DAYS = 14
+
+_CE_QUERY = {
+    "Granularity": "DAILY",
+    "Metrics": ["UnblendedCost"],
+    "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+}
 
 
 @dataclass(frozen=True)
@@ -37,57 +46,41 @@ class AwsCostRow:
     service: str
     amount_usd: float
 
-    def gauge_point(self) -> tuple[float, dict[str, str]]:
-        return (
-            self.amount_usd,
-            {
-                "aws.account.id": self.account_id,
-                "aws.account.name": self.account_name,
-                "aws.service.name": self.service,
-                "aws.cost.date": self.date,
-            },
-        )
-
 
 class AwsCostError(CostExportError):
     """Raised when Cost Explorer cannot be queried."""
 
 
-def _parse_assume_roles() -> dict[str, str]:
-    raw = os.environ.get("AWS_COST_ASSUME_ROLES", "").strip()
-    roles: dict[str, str] = {}
+def _pairs(raw: str, separator: str, *, env: str, expected: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
     for part in raw.split(","):
         part = part.strip()
         if not part:
             continue
-        name, sep, arn = part.partition("=")
-        name, arn = name.strip(), arn.strip()
-        if not sep or not name or not arn:
-            raise AwsCostError(
-                f"invalid AWS_COST_ASSUME_ROLES entry {part!r}; expected name=role_arn"
-            )
-        roles[name] = arn
-    return roles
+        name, sep, value = part.partition(separator)
+        name, value = name.strip(), value.strip()
+        if not sep or not name or not value:
+            raise AwsCostError(f"invalid {env} entry {part!r}; expected {expected}")
+        pairs.append((name, value))
+    return pairs
 
 
 def list_accounts() -> list[AwsAccount]:
     raw = os.environ.get("AWS_COST_ACCOUNTS", DEFAULT_ACCOUNTS).strip()
-    roles = _parse_assume_roles()
-    accounts: list[AwsAccount] = []
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        name, _, account_id = part.partition(":")
-        name = name.strip()
-        account_id = account_id.strip()
-        if not name or not account_id:
-            raise AwsCostError(
-                f"invalid AWS_COST_ACCOUNTS entry {part!r}; expected name:account_id"
-            )
-        accounts.append(
-            AwsAccount(name=name, account_id=account_id, role_arn=roles.get(name))
+    roles = dict(
+        _pairs(
+            os.environ.get("AWS_COST_ASSUME_ROLES", "").strip(),
+            "=",
+            env="AWS_COST_ASSUME_ROLES",
+            expected="name=role_arn",
         )
+    )
+    accounts = [
+        AwsAccount(name=name, account_id=account_id, role_arn=roles.get(name))
+        for name, account_id in _pairs(
+            raw, ":", env="AWS_COST_ACCOUNTS", expected="name:account_id"
+        )
+    ]
     if not accounts:
         raise AwsCostError("AWS_COST_ACCOUNTS is empty")
     return accounts
@@ -96,8 +89,7 @@ def list_accounts() -> list[AwsAccount]:
 def _session_for_account(account: AwsAccount) -> boto3.Session:
     if not account.role_arn:
         return boto3.Session()
-    sts = boto3.client("sts")
-    assumed = sts.assume_role(
+    assumed = boto3.client("sts").assume_role(
         RoleArn=account.role_arn,
         RoleSessionName="aig-observability-cost",
         DurationSeconds=3600,
@@ -108,6 +100,32 @@ def _session_for_account(account: AwsAccount) -> boto3.Session:
         aws_secret_access_key=creds["SecretAccessKey"],
         aws_session_token=creds["SessionToken"],
     )
+
+
+def _unblended_amount(group: dict) -> float:
+    raw = group.get("Metrics", {}).get("UnblendedCost", {}).get("Amount", "0")
+    return float(raw or 0)
+
+
+def _rows_from_page(account: AwsAccount, response: dict) -> list[AwsCostRow]:
+    rows: list[AwsCostRow] = []
+    for day in response.get("ResultsByTime", []):
+        day_start = day["TimePeriod"]["Start"]
+        for group in day.get("Groups", []):
+            amount = _unblended_amount(group)
+            if amount == 0:
+                continue
+            keys = group.get("Keys") or []
+            rows.append(
+                AwsCostRow(
+                    date=day_start,
+                    account_id=account.account_id,
+                    account_name=account.name,
+                    service=keys[0] if keys else "Unknown",
+                    amount_usd=amount,
+                )
+            )
+    return rows
 
 
 def _fetch_account_costs(
@@ -123,41 +141,13 @@ def _fetch_account_costs(
     ce = session.client("ce", region_name=CE_REGION)
     rows: list[AwsCostRow] = []
     token: str | None = None
+    period = {"Start": start.isoformat(), "End": end.isoformat()}
     while True:
-        kwargs: dict[str, Any] = {
-            "TimePeriod": {
-                "Start": start.isoformat(),
-                "End": end.isoformat(),
-            },
-            "Granularity": "DAILY",
-            "Metrics": ["UnblendedCost"],
-            "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
-        }
+        kwargs = {**_CE_QUERY, "TimePeriod": period}
         if token:
             kwargs["NextPageToken"] = token
         response = ce.get_cost_and_usage(**kwargs)
-        for day in response.get("ResultsByTime", []):
-            day_start = day["TimePeriod"]["Start"]
-            for group in day.get("Groups", []):
-                keys = group.get("Keys") or []
-                service = keys[0] if keys else "Unknown"
-                amount = float(
-                    group.get("Metrics", {})
-                    .get("UnblendedCost", {})
-                    .get("Amount", "0")
-                    or 0
-                )
-                if amount == 0:
-                    continue
-                rows.append(
-                    AwsCostRow(
-                        date=day_start,
-                        account_id=account.account_id,
-                        account_name=account.name,
-                        service=service,
-                        amount_usd=amount,
-                    )
-                )
+        rows.extend(_rows_from_page(account, response))
         token = response.get("NextPageToken")
         if not token:
             break
@@ -170,21 +160,21 @@ def get_daily_costs(
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
 ) -> CostReport[AwsCostRow]:
     """Return daily UnblendedCost by service for configured accounts."""
-    window: CostWindow = resolve_range(since, until, lookback_days)
+    window = resolve_range(since, until, lookback_days)
     accounts = list_accounts()
     rows: list[AwsCostRow] = []
     errors: list[str] = []
 
     with ThreadPoolExecutor(max_workers=max(1, len(accounts))) as pool:
         futs = {
-            account.name: pool.submit(
+            account: pool.submit(
                 _fetch_account_costs, account, window.start, window.end
             )
             for account in accounts
         }
         for account in accounts:
             try:
-                rows.extend(futs[account.name].result())
+                rows.extend(futs[account].result())
             except (AwsCostError, BotoCoreError, ClientError) as exc:
                 errors.append(f"{account.name}: {exc}")
 

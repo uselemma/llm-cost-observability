@@ -264,6 +264,7 @@ STATUS_EXPR = "status"
 INPUT_MESSAGES_EXPR = "input_messages"
 OUTPUT_TEXT_EXPR = "output_text"
 TAGS_EXPR = "tags"
+FEATURE_EXPR = "SpanAttributes['feature']"
 
 LIST_SELECT = f"""
     request_id,

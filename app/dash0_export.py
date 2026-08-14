@@ -88,11 +88,11 @@ def publish_gauges(
     """Record the given gauges and export them to Dash0 in a single shot."""
     exporter = dash0_exporter_from_env()
     if exporter is None:
-        return PublishResult(False, reason="DASH0_INGESTION_URL disabled/unset")
+        return PublishResult(ok=False, reason="DASH0_INGESTION_URL disabled/unset")
 
     points = sum(len(spec.points) for spec in specs)
     if points == 0:
-        return PublishResult(True, reason="no data points")
+        return PublishResult(ok=True, reason="no data points")
 
     reader = InMemoryMetricReader()
     provider = MeterProvider(
@@ -120,15 +120,15 @@ def publish_gauges(
 
         metrics_data = reader.get_metrics_data()
         if metrics_data is None:
-            return PublishResult(False, reason="no metrics collected")
+            return PublishResult(ok=False, reason="no metrics collected")
         result = exporter.export(metrics_data, timeout_millis=30_000)
         if result != MetricExportResult.SUCCESS:
             return PublishResult(
-                False, reason="OTLP export failed (check Dash0 endpoint/token)"
+                ok=False, reason="OTLP export failed (check Dash0 endpoint/token)"
             )
-        return PublishResult(True, points=points)
+        return PublishResult(ok=True, points=points)
     except Exception as exc:  # noqa: BLE001 — CLI must not crash on export quirks
-        return PublishResult(False, reason=str(exc))
+        return PublishResult(ok=False, reason=str(exc))
     finally:
         for closer in (exporter.shutdown, provider.shutdown):
             try:

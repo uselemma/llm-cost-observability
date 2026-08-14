@@ -4,9 +4,9 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.cost_export import CostWindowError
 from app.aws_costs import AwsCostError, AwsCostRow, get_daily_costs, list_accounts
-from app.export_aws_costs import publish_aws_cost_gauges
+from app.cost_export import CostWindowError, build_gauge_specs
+from app.export_aws_costs import AWS_COST_GAUGES, aws_cost_attributes
 
 
 def _ce_page(day: str, groups: list[tuple[str, str]], token: str | None = None) -> dict:
@@ -204,14 +204,8 @@ class GaugeSpecTests(unittest.TestCase):
             service="AmazonEC2",
             amount_usd=1.5,
         )
-        with patch("app.export_aws_costs.publish_gauges") as publish:
-            publish_aws_cost_gauges([row])
-
-        specs = publish.call_args.args[0]
+        specs = build_gauge_specs([row], AWS_COST_GAUGES, aws_cost_attributes)
         self.assertEqual([spec.name for spec in specs], ["aws.cost.unblended"])
-        self.assertEqual(
-            publish.call_args.kwargs["default_service_name"], "aws-cost-exporter"
-        )
         self.assertEqual(
             specs[0].points,
             [
