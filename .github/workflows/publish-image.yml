@@ -35,7 +35,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:aig-observability
-      - name: Ensure org can pull package
+      - name: Verify package is pullable
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -51,19 +51,18 @@ jobs:
             sleep 3
           done
 
-          # GITHUB_TOKEN can see the package but cannot grant user ACL (404).
-          # jason136 (a former employee, not an org member) was the prior
-          # per-user grant target; that path 404s unconditionally regardless
-          # of token, same as platform/aig-observability-docker.yml hit.
-          # packages:write can push + GET, but visibility/ACL changes need a
-          # package admin (API returns 404). Do this once in the UI:
+          # This package stays private -- do not change visibility here or
+          # anywhere in CI. GITHUB_TOKEN already has implicit pull rights to
+          # its own repo's linked package (no grant needed), which is what
+          # this check actually verifies. The cluster's separate GHCR_PAT
+          # pull identity is a different credential entirely; granting it
+          # read access to this package is a one-time, out-of-band
+          # administrative action (real org/package-admin credential
+          # required -- GITHUB_TOKEN structurally cannot do it, 404s
+          # regardless of permissions declared here), not something this
+          # workflow should attempt on every push. Do it once via
           # https://github.com/orgs/uselemma/packages/container/package/llm-cost-observability
-          # → Package settings → Change visibility → Public
-          if ! gh api --method PATCH \
-            "/orgs/uselemma/packages/container/${PKG}" \
-            -f visibility=public; then
-            echo "::warning::Could not set package public via API. Set visibility Public in the GitHub UI (package admin)."
-          fi
-
+          # → Package settings → Manage Actions access / collaborator access,
+          # granting read to whichever identity GHCR_PAT belongs to.
           echo "Verify GITHUB_TOKEN can pull:"
           docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
