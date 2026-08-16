@@ -35,15 +35,12 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:aig-observability
-      - name: Ensure org can pull package
+      - name: Verify package is pullable
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           PKG="llm-cost-observability"
-          echo "Listing org container packages visible to GITHUB_TOKEN:"
-          gh api "/orgs/uselemma/packages?package_type=container&per_page=100" \
-            --jq '.[].name' || true
 
           # Packages API can lag the registry push by a few seconds.
           for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -54,20 +51,18 @@ jobs:
             sleep 3
           done
 
-          # Internal = org-entitled PATs with read:packages can pull.
-          gh api --method PATCH \
-            "/orgs/uselemma/packages/container/${PKG}" \
-            -f visibility=internal
-
-          # Cluster pull secret authenticates as jason136 (same as platform/api).
-          gh api --method PUT \
-            "/orgs/uselemma/packages/container/${PKG}/access/jason136" \
-            -f permission=read
-
-          # Inherit repository collaborators/visibility when supported.
-          gh api --method PUT \
-            "/orgs/uselemma/packages/container/${PKG}/access/uselemma/llm-cost-observability" \
-            -f permission=read || true
-
+          # This package stays private -- do not change visibility here or
+          # anywhere in CI. GITHUB_TOKEN already has implicit pull rights to
+          # its own repo's linked package (no grant needed), which is what
+          # this check actually verifies. The cluster's separate GHCR_PAT
+          # pull identity is a different credential entirely; granting it
+          # read access to this package is a one-time, out-of-band
+          # administrative action (real org/package-admin credential
+          # required -- GITHUB_TOKEN structurally cannot do it, 404s
+          # regardless of permissions declared here), not something this
+          # workflow should attempt on every push. Do it once via
+          # https://github.com/orgs/uselemma/packages/container/package/llm-cost-observability
+          # → Package settings → Manage Actions access / collaborator access,
+          # granting read to whichever identity GHCR_PAT belongs to.
           echo "Verify GITHUB_TOKEN can pull:"
           docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
