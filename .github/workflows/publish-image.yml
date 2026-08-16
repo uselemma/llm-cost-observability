@@ -41,9 +41,6 @@ jobs:
         run: |
           set -euo pipefail
           PKG="llm-cost-observability"
-          echo "Listing org container packages visible to GITHUB_TOKEN:"
-          gh api "/orgs/uselemma/packages?package_type=container&per_page=100" \
-            --jq '.[].name' || true
 
           # Packages API can lag the registry push by a few seconds.
           for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -54,20 +51,19 @@ jobs:
             sleep 3
           done
 
-          # Internal = org-entitled PATs with read:packages can pull.
-          gh api --method PATCH \
+          # GITHUB_TOKEN can see the package but cannot grant user ACL (404).
+          # jason136 (a former employee, not an org member) was the prior
+          # per-user grant target; that path 404s unconditionally regardless
+          # of token, same as platform/aig-observability-docker.yml hit.
+          # packages:write can push + GET, but visibility/ACL changes need a
+          # package admin (API returns 404). Do this once in the UI:
+          # https://github.com/orgs/uselemma/packages/container/package/llm-cost-observability
+          # → Package settings → Change visibility → Public
+          if ! gh api --method PATCH \
             "/orgs/uselemma/packages/container/${PKG}" \
-            -f visibility=internal
-
-          # Cluster pull secret authenticates as jason136 (same as platform/api).
-          gh api --method PUT \
-            "/orgs/uselemma/packages/container/${PKG}/access/jason136" \
-            -f permission=read
-
-          # Inherit repository collaborators/visibility when supported.
-          gh api --method PUT \
-            "/orgs/uselemma/packages/container/${PKG}/access/uselemma/llm-cost-observability" \
-            -f permission=read || true
+            -f visibility=public; then
+            echo "::warning::Could not set package public via API. Set visibility Public in the GitHub UI (package admin)."
+          fi
 
           echo "Verify GITHUB_TOKEN can pull:"
           docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
