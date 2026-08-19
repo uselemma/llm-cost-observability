@@ -1,0 +1,46 @@
+# Rate card: vendors with no programmatic billing API.
+#
+# Every entry here is published as saas.cost.daily with
+# saas_cost_source="declared", which the dashboard renders distinctly from
+# metered spend. This exists so the headline "cost per trace" is genuinely
+# total rather than quietly omitting whatever isn't API-accessible.
+#
+# monthly_usd: null means "we know we pay for this, nobody has entered the
+# figure yet". Those entries are SKIPPED and named in the exporter's log and
+# in the dashboard's "unpriced vendors" panel -- an honest gap is better than
+# an invented number. Fill each one in from the actual invoice.
+#
+# Daily amount = monthly_usd * 12 / 365 (calendar-month invoices, even daily
+# attribution). Re-check these whenever a plan changes; nothing here can
+# detect that it has gone stale.
+vendors:
+  - provider: dash0
+    service: Observability platform
+    monthly_usd: null
+    env: shared
+    note: >-
+      Consumption-based (spans/metric points/logs), no billing API found as of
+      2026-08. Use the last invoice total, or the in-product cost forecast.
+
+  - provider: posthog
+    service: Product analytics
+    monthly_usd: null
+    env: shared
+    note: Usage-based; take the last invoice.
+
+  - provider: clerk
+    service: Authentication
+    monthly_usd: null
+    env: shared
+    note: Per-MAU plan; take the last invoice.
+
+  - provider: resend
+    service: Transactional email
+    monthly_usd: null
+    env: shared
+
+  - provider: github
+    service: Actions and seats
+    monthly_usd: null
+    env: shared
+    note: Only if CI runs for the trace pipeline are considered cost of serving.
