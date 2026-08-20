@@ -1,11 +1,20 @@
-"""CLI: publish unified per-vendor SaaS spend to Dash0 as one gauge.
+"""CLI: publish unified per-vendor SaaS spend to Dash0 as two gauges.
 
-  saas.cost.daily -- daily USD cost, one point per (date, provider, service)
+  saas.cost.daily         -- daily USD cost, one point per (date, provider,
+                             service); use for window totals
+  saas.cost.daily.current -- the same figures for the most recent complete
+                             day only, carrying no date attribute; use for
+                             per-vendor daily trend charts
 
 Attribute keys (PromQL label names use underscores): saas.cost.date,
 saas.provider, saas.service, saas.cost.source, saas.env. Each run
 re-publishes a rolling lookback window; identical attribute sets update in
 place, so chart with last_over_time (see the dashboard's 25h comment).
+
+The dated gauge cannot be charted as a daily trend -- grouping by the date
+attribute gives one series per vendor per day, and the date cannot reach the
+x-axis because Dash0 drops backdated samples. Hence the .current companion;
+see app.dash0_export.latest_complete_day_spec.
 
 This supersedes export_aws_costs / export_llm_costs as the dashboard's
 source. Those two keep running and keep publishing their own metrics -- the
@@ -37,7 +46,13 @@ import sys
 from collections import defaultdict
 from datetime import date, timedelta
 
-from app.dash0_export import GaugeSpec, PublishResult, publish_gauges
+from app.dash0_export import (
+    CURRENT_DAY_SUFFIX,
+    GaugeSpec,
+    PublishResult,
+    latest_complete_day_spec,
+    publish_gauges,
+)
 from app.vendors import VENDORS
 from app.vendors import cloudflare as cloudflare_vendor
 from app.vendors import declared as declared_vendor
@@ -165,7 +180,17 @@ def publish_saas_cost_gauges(
         ),
         points=aggregate(rows),
     )
-    return publish_gauges([spec], service_name=SERVICE_NAME, env=env)
+    specs = [spec]
+    current = latest_complete_day_spec(spec, date_key="saas.cost.date")
+    if current is None:
+        log.warning(
+            "no complete day in window; %s%s not published",
+            METRIC_NAME,
+            CURRENT_DAY_SUFFIX,
+        )
+    else:
+        specs.append(current)
+    return publish_gauges(specs, service_name=SERVICE_NAME, env=env)
 
 
 def main(argv: list[str] | None = None) -> int:
