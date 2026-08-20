@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import unittest
+from datetime import date
+from unittest import mock
+
+from app import export_saas_costs as exporter
+from app.vendors.base import CostRow, VendorCostError
+
+
+def _row(provider="aws", service="EKS", day="2026-08-13", cost=1.0, **kwargs):
+    return CostRow(
+        date=day, provider=provider, service=service, cost_usd=cost, **kwargs
+    )
+
+
+class SelectVendorsTests(unittest.TestCase):
+    def test_defaults_to_configured_vendors_only(self) -> None:
+        fake = {
+            "on": mock.Mock(is_configured=lambda env=None: True),
+            "off": mock.Mock(is_configured=lambda env=None: False),
+        }
+        with mock.patch.dict(exporter.VENDORS, fake, clear=True):
+            selected, skipped = exporter.select_vendors(None)
+        self.assertEqual(selected, ["on"])
+        self.assertEqual(skipped, ["off"])
+
+    def test_explicit_request_bypasses_configuration_check(self) -> None:
+        fake = {"off": mock.Mock(is_configured=lambda env=None: False)}
+        with mock.patch.dict(exporter.VENDORS, fake, clear=True):
+            selected, skipped = exporter.select_vendors("off")
+        self.assertEqual(selected, ["off"])
+        self.assertEqual(skipped, [])
+
+    def test_unknown_vendor_is_fatal(self) -> None:
+        with self.assertRaises(SystemExit):
+            exporter.select_vendors("nope")
+
+
+class AggregateTests(unittest.TestCase):
+    def test_sums_duplicate_attribute_sets(self) -> None:
+        points = exporter.aggregate([_row(cost=1.0), _row(cost=2.5)])
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0][0], 3.5)
+
+    def test_keeps_distinct_services_apart(self) -> None:
+        points = exporter.aggregate([_row(service="EKS"), _row(service="S3")])
+        self.assertEqual(len(points), 2)
+
+    def test_drops_rows_that_net_to_zero(self) -> None:
+        self.assertEqual(exporter.aggregate([_row(cost=1.0), _row(cost=-1.0)]), [])
+
+    def test_point_attributes_are_promql_ready(self) -> None:
+        points = exporter.aggregate([_row()])
+        self.assertEqual(
+            set(points[0][1]),
+            {
+                "saas.cost.date",
+                "saas.provider",
+                "saas.service",
+                "saas.cost.source",
+                "saas.env",
+            },
+        )
+
+
+class CollectTests(unittest.TestCase):
+    def test_one_failing_vendor_does_not_sink_the_others(self) -> None:
+        good = mock.Mock(fetch=lambda s, e, env=None: [_row(provider="good")])
+        bad = mock.Mock(
+            fetch=mock.Mock(side_effect=VendorCostError("token expired"))
+        )
+        with mock.patch.dict(
+            exporter.VENDORS, {"good": good, "bad": bad}, clear=True
+        ):
+            rows, errors, _ = exporter.collect(
+                ["good", "bad"], date(2026, 8, 13), date(2026, 8, 14)
+            )
+        self.assertEqual([row.provider for row in rows], ["good"])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("token expired", errors[0])
+
+    def test_unexpected_exception_is_contained(self) -> None:
+        boom = mock.Mock(fetch=mock.Mock(side_effect=RuntimeError("kaboom")))
+        with mock.patch.dict(exporter.VENDORS, {"boom": boom}, clear=True):
+            rows, errors, _ = exporter.collect(
+                ["boom"], date(2026, 8, 13), date(2026, 8, 14)
+            )
+        self.assertEqual(rows, [])
+        self.assertIn("RuntimeError", errors[0])
+
+    def test_cloudflare_coverage_warning_is_surfaced(self) -> None:
+        cf = exporter.cloudflare_vendor
+        with mock.patch.dict(exporter.VENDORS, {"cloudflare": cf}, clear=True):
+            with mock.patch.object(
+                cf, "fetch_with_coverage", return_value=([], "partial period")
+            ):
+                _, _, warnings = exporter.collect(
+                    ["cloudflare"], date(2026, 8, 13), date(2026, 8, 14)
+                )
+        self.assertTrue(any("partial period" in w for w in warnings))
+
+
+class PublishTests(unittest.TestCase):
+    def test_publishes_single_gauge_with_usd_unit(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_publish(specs, *, service_name, env=None):
+            captured["specs"] = specs
+            return exporter.PublishResult(ok=True, points=len(specs[0].points))
+
+        with mock.patch.object(exporter, "publish_gauges", side_effect=fake_publish):
+            result = exporter.publish_saas_cost_gauges([_row()])
+
+        specs = captured["specs"]
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].name, "saas.cost.daily")
+        self.assertEqual(specs[0].unit, "USD")
+        self.assertTrue(result.ok)
+
+
+if __name__ == "__main__":
+    unittest.main()
