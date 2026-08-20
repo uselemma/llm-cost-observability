@@ -205,5 +205,128 @@ class ChunkedQueryTests(unittest.TestCase):
         self.assertIn("NOT_ENOUGH_SPACE", str(caught.exception))
 
 
+class PartialChunkFailureTests(unittest.TestCase):
+    """One heavy day must not empty the whole window.
+
+    A single day over ClickHouse Cloud's memory limit used to abort the run and
+    take all fourteen days with it, which left the dashboard's cost panels
+    blank even though the day they needed had been queried successfully.
+    """
+
+    ROW = ("2026-08-05", "gpt-4", "openai", "extract", 2.5, 4)
+
+    def _run_with_failing_day(self, failing_day: str, *, since, until):
+        import app.llm_costs as lc
+
+        class FakeResult:
+            def __init__(self, rows):
+                self.result_rows = rows
+
+        class FlakyClient:
+            def query(self, sql):
+                if f"toDate('{failing_day}')" in sql:
+                    raise RuntimeError("MEMORY_LIMIT_EXCEEDED")
+                return FakeResult([PartialChunkFailureTests.ROW])
+
+        with mock.patch.object(lc, "get_client", return_value=FlakyClient()):
+            return lc.get_daily_costs(since=since, until=until, env={})
+
+    def test_surviving_days_are_still_returned(self) -> None:
+        payload = self._run_with_failing_day(
+            "2026-08-03", since="2026-08-01", until="2026-08-05"
+        )
+        # 5 days requested; the failing one contributes nothing, and it also
+        # appears as the upper bound of the previous chunk, so two queries
+        # reference it.
+        self.assertGreater(len(payload["rows"]), 0)
+        self.assertEqual(payload["rows"][0]["spend_usd"], 2.5)
+
+    def test_failed_day_is_reported_not_raised(self) -> None:
+        payload = self._run_with_failing_day(
+            "2026-08-03", since="2026-08-01", until="2026-08-05"
+        )
+        self.assertTrue(payload["errors"])
+        joined = "; ".join(payload["errors"])
+        self.assertIn("2026-08-03", joined)
+        self.assertIn("MEMORY_LIMIT_EXCEEDED", joined)
+
+    def test_errors_is_empty_when_every_chunk_succeeds(self) -> None:
+        import app.llm_costs as lc
+
+        class FakeResult:
+            def __init__(self, rows):
+                self.result_rows = rows
+
+        class GoodClient:
+            def query(self, sql):
+                return FakeResult([PartialChunkFailureTests.ROW])
+
+        with mock.patch.object(lc, "get_client", return_value=GoodClient()):
+            payload = lc.get_daily_costs(
+                since="2026-08-01", until="2026-08-03", env={}
+            )
+        self.assertEqual(payload["errors"], [])
+
+    def test_every_chunk_failing_still_raises(self) -> None:
+        import app.llm_costs as lc
+
+        class BoomClient:
+            def query(self, sql):
+                raise RuntimeError("MEMORY_LIMIT_EXCEEDED")
+
+        with mock.patch.object(lc, "get_client", return_value=BoomClient()):
+            with self.assertRaises(lc.LlmCostError):
+                lc.get_daily_costs(since="2026-08-01", until="2026-08-05", env={})
+
+
+class LlmVendorCoverageTests(unittest.TestCase):
+    def test_partial_window_surfaces_as_a_warning(self) -> None:
+        from app.vendors import llm as llm_vendor
+
+        payload = {
+            "rows": [
+                {
+                    "date": "2026-08-05",
+                    "model": "gpt-4",
+                    "provider": "openai",
+                    "feature": "extract",
+                    "spend_usd": 2.5,
+                    "calls": 4,
+                }
+            ],
+            "since": "2026-08-01",
+            "until": "2026-08-05",
+            "errors": ["2026-08-03..2026-08-04: MEMORY_LIMIT_EXCEEDED"],
+        }
+        with mock.patch.object(llm_vendor, "get_daily_costs", return_value=payload):
+            rows, warning = llm_vendor.fetch_with_coverage(
+                date(2026, 8, 1), date(2026, 8, 6)
+            )
+        self.assertEqual(len(rows), 1)
+        self.assertIsNotNone(warning)
+        self.assertIn("2026-08-03", warning)
+        self.assertIn("understates spend", warning)
+
+    def test_no_warning_when_the_window_is_whole(self) -> None:
+        from app.vendors import llm as llm_vendor
+
+        payload = {"rows": [], "since": "x", "until": "y", "errors": []}
+        with mock.patch.object(llm_vendor, "get_daily_costs", return_value=payload):
+            rows, warning = llm_vendor.fetch_with_coverage(
+                date(2026, 8, 1), date(2026, 8, 6)
+            )
+        self.assertEqual(rows, [])
+        self.assertIsNone(warning)
+
+    def test_fetch_still_returns_a_bare_row_list(self) -> None:
+        from app.vendors import llm as llm_vendor
+
+        payload = {"rows": [], "since": "x", "until": "y", "errors": ["boom"]}
+        with mock.patch.object(llm_vendor, "get_daily_costs", return_value=payload):
+            self.assertEqual(
+                llm_vendor.fetch(date(2026, 8, 1), date(2026, 8, 6)), []
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -66,9 +66,14 @@ class AggregateTests(unittest.TestCase):
 
 class CollectTests(unittest.TestCase):
     def test_one_failing_vendor_does_not_sink_the_others(self) -> None:
-        good = mock.Mock(fetch=lambda s, e, env=None: [_row(provider="good")])
+        # spec pins the vendor interface: a bare Mock answers hasattr() for
+        # everything, so it would masquerade as a coverage-reporting vendor.
+        good = mock.Mock(
+            spec=["fetch"], fetch=lambda s, e, env=None: [_row(provider="good")]
+        )
         bad = mock.Mock(
-            fetch=mock.Mock(side_effect=VendorCostError("token expired"))
+            spec=["fetch"],
+            fetch=mock.Mock(side_effect=VendorCostError("token expired")),
         )
         with mock.patch.dict(
             exporter.VENDORS, {"good": good, "bad": bad}, clear=True
@@ -81,7 +86,9 @@ class CollectTests(unittest.TestCase):
         self.assertIn("token expired", errors[0])
 
     def test_unexpected_exception_is_contained(self) -> None:
-        boom = mock.Mock(fetch=mock.Mock(side_effect=RuntimeError("kaboom")))
+        boom = mock.Mock(
+            spec=["fetch"], fetch=mock.Mock(side_effect=RuntimeError("kaboom"))
+        )
         with mock.patch.dict(exporter.VENDORS, {"boom": boom}, clear=True):
             rows, errors, _ = exporter.collect(
                 ["boom"], date(2026, 8, 13), date(2026, 8, 14)
@@ -90,7 +97,8 @@ class CollectTests(unittest.TestCase):
         self.assertIn("RuntimeError", errors[0])
 
     def test_cloudflare_coverage_warning_is_surfaced(self) -> None:
-        cf = exporter.cloudflare_vendor
+        from app.vendors import cloudflare as cf
+
         with mock.patch.dict(exporter.VENDORS, {"cloudflare": cf}, clear=True):
             with mock.patch.object(
                 cf, "fetch_with_coverage", return_value=([], "partial period")

@@ -131,6 +131,12 @@ def get_daily_costs(
     cross-chunk aggregation. Chunk boundaries fall at midnight and each chunk
     scans two minutes past its own edges, so a reconciliation pair split
     across midnight is still resolved whole.
+
+    A chunk that fails is reported in the returned "errors" list rather than
+    aborting the run, because one heavy day used to destroy the whole window:
+    a single day exceeding ClickHouse Cloud's 7.2 GiB limit emptied all 14,
+    and chunking is already at its one-day floor with nowhere smaller to
+    retreat to. Only a connection failure, or every chunk failing, raises.
     """
     start, end = resolve_range(since, until, lookback_days)
     size = chunk_days(env)
@@ -145,15 +151,18 @@ def get_daily_costs(
         raise LlmCostError(f"clickhouse connection failed: {exc}") from exc
 
     rows: list[dict[str, Any]] = []
-    for window_start, window_end in _windows(start, end, size):
+    errors: list[str] = []
+    windows = _windows(start, end, size)
+    for window_start, window_end in windows:
         try:
             result = client.query(_build_query(window_start, window_end))
         except Exception as exc:  # noqa: BLE001 -- one error type for the CLI
             # Name the failing chunk; "the query failed" over a 14d window
             # gave no clue which day was too heavy.
-            raise LlmCostError(
+            errors.append(
                 f"{window_start.isoformat()}..{window_end.isoformat()}: {exc}"
-            ) from exc
+            )
+            continue
 
         rows.extend(
             {
@@ -167,8 +176,12 @@ def get_daily_costs(
             for day, model, provider, feature, spend_usd, calls in result.result_rows
         )
 
+    if errors and len(errors) == len(windows):
+        raise LlmCostError("; ".join(errors))
+
     return {
         "rows": rows,
         "since": start.isoformat(),
         "until": (end - timedelta(days=1)).isoformat(),
+        "errors": errors,
     }

@@ -128,9 +128,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     rows = payload["rows"]
+    errors = payload.get("errors") or []
     log.info(
-        "fetched %d rows (%s .. %s)", len(rows), payload["since"], payload["until"]
+        "fetched %d rows (%s .. %s); failed days=%s",
+        len(rows),
+        payload["since"],
+        payload["until"],
+        len(errors) or "none",
     )
+    for error in errors:
+        log.warning("chunk failed, day omitted: %s", error)
 
     if args.dry_run:
         for row in rows[:20]:
@@ -158,6 +165,11 @@ def main(argv: list[str] | None = None) -> int:
         COST_METRIC,
         CALLS_METRIC,
     )
+    if errors:
+        # A partial window is worth publishing -- the panels need the most
+        # recent complete day far more than they need all fourteen.
+        log.warning("partial window: %d day(s) omitted", len(errors))
+        return 0 if result.points else 1
     return 0
 
 
