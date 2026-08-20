@@ -53,6 +53,7 @@ def fetch(
         payload = get_daily_costs(
             since=start.isoformat(),
             until=(end - timedelta(days=1)).isoformat(),
+            env=env,
         )
     except LlmCostError as exc:
         raise VendorCostError(str(exc)) from exc
