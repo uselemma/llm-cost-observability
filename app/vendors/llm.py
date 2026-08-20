@@ -49,6 +49,18 @@ def _provider_name(raw: str) -> str:
 def fetch(
     start: date, end: date, env: dict[str, str] | None = None
 ) -> list[CostRow]:
+    return fetch_with_coverage(start, end, env)[0]
+
+
+def fetch_with_coverage(
+    start: date, end: date, env: dict[str, str] | None = None
+) -> tuple[list[CostRow], str | None]:
+    """Rows plus a warning naming any day the rollup could not cover.
+
+    A day heavy enough to exceed ClickHouse Cloud's memory limit is skipped
+    rather than failing the vendor outright, so returning the shortfall keeps
+    the resulting undercount visible instead of silent.
+    """
     try:
         payload = get_daily_costs(
             since=start.isoformat(),
@@ -58,7 +70,15 @@ def fetch(
     except LlmCostError as exc:
         raise VendorCostError(str(exc)) from exc
 
-    return [
+    errors = payload.get("errors") or []
+    warning = (
+        f"{len(errors)} day(s) omitted, total understates spend: "
+        + "; ".join(errors)
+        if errors
+        else None
+    )
+
+    rows = [
         CostRow(
             date=str(row["date"]),
             provider=_provider_name(str(row["provider"])),
@@ -74,3 +94,4 @@ def fetch(
         for row in payload["rows"]
         if float(row["spend_usd"]) != 0
     ]
+    return rows, warning

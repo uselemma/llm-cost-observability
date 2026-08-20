@@ -54,7 +54,6 @@ from app.dash0_export import (
     publish_gauges,
 )
 from app.vendors import VENDORS
-from app.vendors import cloudflare as cloudflare_vendor
 from app.vendors import declared as declared_vendor
 from app.vendors.base import (
     DEFAULT_LOOKBACK_DAYS,
@@ -115,9 +114,11 @@ def collect(
     for name in names:
         module = VENDORS[name]
         try:
-            if module is cloudflare_vendor:
-                # Cloudflare can only serve the current billing period, so it
-                # reports how much of our window it actually covered.
+            if hasattr(module, "fetch_with_coverage"):
+                # Some vendors cannot always cover the whole window and report
+                # the shortfall: Cloudflare serves only the current billing
+                # period, and the LLM rollup skips a day too heavy for
+                # ClickHouse. Either way the gap is surfaced, not swallowed.
                 vendor_rows, warning = module.fetch_with_coverage(start, end, env)
                 if warning:
                     warnings.append(f"{name}: {warning}")
