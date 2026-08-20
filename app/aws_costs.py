@@ -1,5 +1,10 @@
 """AWS Cost Explorer helpers for daily spend by service/account.
 
+Reports the cost of actually running the workload: promotional credits and
+refunds are filtered out (see DEFAULT_EXCLUDED_RECORD_TYPES), so the figure is
+what the usage would cost at list price rather than what happened to be
+invoiced after credits.
+
 Auth is the default credential chain (IRSA in-cluster, AWS_PROFILE locally).
 The configured "dev" account is queried via sts:AssumeRole into
 AWS_COST_DEV_ROLE_ARN from the prod principal. Cost Explorer is always called
@@ -18,6 +23,19 @@ from botocore.exceptions import BotoCoreError, ClientError
 CE_REGION = "us-east-1"
 DEFAULT_ACCOUNTS = "prod:806880857007,dev:121881624000"
 DEFAULT_LOOKBACK_DAYS = 14
+
+# Cost Explorer returns every RECORD_TYPE by default, so promotional credits
+# and refunds come back as negative UnblendedCost line items that cancel the
+# positive usage they offset. On a credit-covered account that nets the whole
+# bill to ~$0, which makes "cost per trace" read as free while real resources
+# are being consumed -- and it silently stops being true the day the credits
+# run out. We want the cost of actually serving traffic, so credits are
+# excluded and the figure is what we would pay at list.
+#
+# Only Credit and Refund are dropped. Negative record types that are one half
+# of a matched pair -- SavingsPlanNegation against SavingsPlanCoveredUsage,
+# for instance -- must stay, or the surviving half double-counts.
+DEFAULT_EXCLUDED_RECORD_TYPES = "Credit,Refund"
 
 
 @dataclass(frozen=True)
@@ -49,6 +67,20 @@ def list_accounts(env: dict[str, str] | None = None) -> list[AwsAccount]:
     if not accounts:
         raise AwsCostError("AWS_COST_ACCOUNTS is empty")
     return accounts
+
+
+def excluded_record_types(env: dict[str, str] | None = None) -> list[str]:
+    """RECORD_TYPE values to drop from Cost Explorer results.
+
+    Set AWS_COST_EXCLUDE_RECORD_TYPES to override; "none" keeps everything
+    (the old credit-netted behaviour).
+    """
+    e = env if env is not None else os.environ
+    raw = e.get("AWS_COST_EXCLUDE_RECORD_TYPES", DEFAULT_EXCLUDED_RECORD_TYPES)
+    raw = raw.strip()
+    if not raw or raw.lower() in ("-", "none", "off"):
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
 
 
 def _parse_day(value: str, field: str) -> date:
@@ -116,6 +148,11 @@ def _fetch_account_costs(
             "Metrics": ["UnblendedCost"],
             "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
         }
+        excluded = excluded_record_types(env)
+        if excluded:
+            kwargs["Filter"] = {
+                "Not": {"Dimensions": {"Key": "RECORD_TYPE", "Values": excluded}}
+            }
         if token:
             kwargs["NextPageToken"] = token
         response = ce.get_cost_and_usage(**kwargs)

@@ -2,7 +2,8 @@
 
 Publishes one gauge per (date, account, service) row:
 
-  aws.cost.unblended  -- AWS daily UnblendedCost
+  aws.cost.unblended  -- AWS daily UnblendedCost, excluding credits/refunds
+                         (cost of running the workload, not the net invoice)
 
 Attribute keys (PromQL label names use underscores): aws.cost.date,
 aws.account.id, aws.account.name, aws.service.name. Each run re-publishes a
