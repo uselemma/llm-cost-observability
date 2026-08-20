@@ -102,7 +102,7 @@ class CollectTests(unittest.TestCase):
 
 
 class PublishTests(unittest.TestCase):
-    def test_publishes_single_gauge_with_usd_unit(self) -> None:
+    def _publish(self, rows):
         captured: dict[str, object] = {}
 
         def fake_publish(specs, *, service_name, env=None):
@@ -110,12 +110,30 @@ class PublishTests(unittest.TestCase):
             return exporter.PublishResult(ok=True, points=len(specs[0].points))
 
         with mock.patch.object(exporter, "publish_gauges", side_effect=fake_publish):
-            result = exporter.publish_saas_cost_gauges([_row()])
+            result = exporter.publish_saas_cost_gauges(rows)
+        return captured["specs"], result
 
-        specs = captured["specs"]
-        self.assertEqual(len(specs), 1)
+    def test_publishes_dated_gauge_with_usd_unit(self) -> None:
+        specs, result = self._publish([_row()])
         self.assertEqual(specs[0].name, "saas.cost.daily")
         self.assertEqual(specs[0].unit, "USD")
+        self.assertTrue(result.ok)
+
+    def test_also_publishes_the_date_free_trend_gauge(self) -> None:
+        specs, _ = self._publish([_row()])
+        self.assertEqual(
+            [spec.name for spec in specs],
+            ["saas.cost.daily", "saas.cost.daily.current"],
+        )
+        # The trend gauge must not carry the date, or each day becomes its own
+        # series and the chart is back to one line per vendor per day.
+        for _, attributes in specs[1].points:
+            self.assertNotIn("saas.cost.date", attributes)
+
+    def test_trend_gauge_is_omitted_when_no_day_has_finished(self) -> None:
+        today = date.today().isoformat()
+        specs, result = self._publish([_row(day=today)])
+        self.assertEqual([spec.name for spec in specs], ["saas.cost.daily"])
         self.assertTrue(result.ok)
 
 

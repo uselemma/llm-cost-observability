@@ -1,14 +1,23 @@
 """CLI: fetch AWS Cost Explorer daily spend and publish gauges to Dash0.
 
-Publishes one gauge per (date, account, service) row:
-
-  aws.cost.unblended  -- AWS daily UnblendedCost, excluding credits/refunds
-                         (cost of running the workload, not the net invoice)
+  aws.cost.unblended          -- AWS daily UnblendedCost, excluding
+                                 credits/refunds (cost of running the
+                                 workload, not the net invoice); one point per
+                                 (date, account, service). Use for window
+                                 totals.
+  aws.cost.unblended.current  -- the same figures for the most recent complete
+                                 day only, carrying no date attribute. Use for
+                                 per-account daily trend charts.
 
 Attribute keys (PromQL label names use underscores): aws.cost.date,
 aws.account.id, aws.account.name, aws.service.name. Each run re-publishes a
 rolling lookback window; identical attribute sets update in place, so chart
 with last_over_time.
+
+The dated gauge cannot be charted as a daily trend -- grouping by the date
+attribute gives one series per account per day, and the date cannot reach the
+x-axis because Dash0 drops backdated samples. Hence the .current companion;
+see app.dash0_export.latest_complete_day_spec.
 
 Usage:
   python -m app.export_aws_costs
@@ -27,7 +36,13 @@ import os
 import sys
 
 from app.aws_costs import AwsCostError, DEFAULT_LOOKBACK_DAYS, get_daily_costs
-from app.dash0_export import GaugeSpec, PublishResult, publish_gauges
+from app.dash0_export import (
+    CURRENT_DAY_SUFFIX,
+    GaugeSpec,
+    PublishResult,
+    latest_complete_day_spec,
+    publish_gauges,
+)
 
 METRIC_NAME = "aws.cost.unblended"
 SERVICE_NAME = "aws-cost-exporter"
@@ -59,7 +74,17 @@ def publish_aws_cost_gauges(
             for row in rows
         ],
     )
-    return publish_gauges([spec], service_name=SERVICE_NAME, env=env)
+    specs = [spec]
+    current = latest_complete_day_spec(spec, date_key="aws.cost.date")
+    if current is None:
+        log.warning(
+            "no complete day in window; %s%s not published",
+            METRIC_NAME,
+            CURRENT_DAY_SUFFIX,
+        )
+    else:
+        specs.append(current)
+    return publish_gauges(specs, service_name=SERVICE_NAME, env=env)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,16 +1,25 @@
 """CLI: aggregate daily LLM spend from ClickHouse and publish gauges to Dash0.
 
-Publishes two gauges per (day, model, provider, feature) row of the
-logical-call rollup (app.llm_costs):
+Publishes gauges per (day, model, provider, feature) row of the logical-call
+rollup (app.llm_costs):
 
-  llm.cost.estimated  -- daily USD spend (Vercel billed cost for reconciled
-                          calls, Cloudflare estimate for legacy calls)
-  llm.calls            -- successful logical calls
+  llm.cost.estimated          -- daily USD spend (Vercel billed cost for
+                                 reconciled calls, Cloudflare estimate for
+                                 legacy calls). Use for window totals.
+  llm.calls                   -- successful logical calls
+  llm.cost.estimated.current  -- spend for the most recent complete day only,
+                                 carrying no date attribute. Use for per-model
+                                 daily trend charts.
 
 Attribute keys (PromQL label names use underscores): llm.cost.date,
 gen_ai.request.model, gen_ai.provider.name, feature. Each run re-publishes a
 rolling lookback window; identical attribute sets update in place, so chart
 with last_over_time.
+
+The dated gauge cannot be charted as a daily trend -- grouping by the date
+attribute gives one series per model per day, and the date cannot reach the
+x-axis because Dash0 drops backdated samples. Hence the .current companion;
+see app.dash0_export.latest_complete_day_spec.
 
 Usage:
   python -m app.export_llm_costs
@@ -28,7 +37,13 @@ import logging
 import os
 import sys
 
-from app.dash0_export import GaugeSpec, PublishResult, publish_gauges
+from app.dash0_export import (
+    CURRENT_DAY_SUFFIX,
+    GaugeSpec,
+    PublishResult,
+    latest_complete_day_spec,
+    publish_gauges,
+)
 from app.llm_costs import DEFAULT_LOOKBACK_DAYS, LlmCostError, get_daily_costs
 
 COST_METRIC = "llm.cost.estimated"
@@ -53,16 +68,17 @@ def publish_llm_cost_gauges(
             "feature": str(row["feature"]),
         }
 
-    specs = [
-        GaugeSpec(
-            name=COST_METRIC,
-            unit="USD",
-            description=(
-                "Daily LLM spend by model, provider, and feature "
-                "(billed for reconciled calls, estimated for legacy)"
-            ),
-            points=[(float(row["spend_usd"]), attrs(row)) for row in rows],
+    cost_spec = GaugeSpec(
+        name=COST_METRIC,
+        unit="USD",
+        description=(
+            "Daily LLM spend by model, provider, and feature "
+            "(billed for reconciled calls, estimated for legacy)"
         ),
+        points=[(float(row["spend_usd"]), attrs(row)) for row in rows],
+    )
+    specs = [
+        cost_spec,
         GaugeSpec(
             name=CALLS_METRIC,
             unit="{call}",
@@ -72,6 +88,17 @@ def publish_llm_cost_gauges(
             points=[(float(row["calls"]), attrs(row)) for row in rows],
         ),
     ]
+    # Only spend gets a trend companion; the call-count panels are ratios
+    # against the window total, not per-day lines.
+    current = latest_complete_day_spec(cost_spec, date_key="llm.cost.date")
+    if current is None:
+        log.warning(
+            "no complete day in window; %s%s not published",
+            COST_METRIC,
+            CURRENT_DAY_SUFFIX,
+        )
+    else:
+        specs.append(current)
     return publish_gauges(specs, service_name=SERVICE_NAME, env=env)
 
 

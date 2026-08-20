@@ -8,7 +8,9 @@ whether the export actually succeeded (not just whether it was attempted).
 from __future__ import annotations
 
 import os
+from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -40,6 +42,75 @@ class GaugeSpec:
     unit: str
     description: str
     points: list[tuple[float, dict[str, str]]]
+
+
+# Suffix for the date-free companion of a dated cost gauge.
+CURRENT_DAY_SUFFIX = ".current"
+
+
+def latest_complete_day_spec(
+    spec: GaugeSpec,
+    *,
+    date_key: str,
+    today: date | None = None,
+) -> GaugeSpec | None:
+    """Derive a date-free gauge holding only the most recent finished day.
+
+    The dated gauges carry the calendar day as an attribute and re-publish the
+    entire lookback window on every run. That makes a per-day trend chart
+    impossible: grouping by the date attribute yields one series per entity
+    *per date* (55 series on the SaaS panel), and the date can never move to
+    the x-axis because every sample is stamped at publish time -- Dash0
+    discards backdated points outright, returning success while dropping
+    anything older than roughly half an hour.
+
+    Dropping the date attribute and keeping a single finished day fixes that:
+    each run contributes exactly one point per entity, so consecutive runs
+    accumulate a real daily trend with one series per entity. Values are
+    copied verbatim from `spec`, so the trend can never disagree with the
+    totals computed from the dated gauge.
+
+    Note the deliberate one-day offset -- the point published today carries
+    yesterday's cost, because today is still accruing and backfilling later
+    is impossible.
+
+    Returns None when no finished day is present.
+    """
+    reference = today or datetime.now(timezone.utc).date()
+
+    finished: list[date] = []
+    for _, attributes in spec.points:
+        raw = attributes.get(date_key, "")
+        try:
+            day = date.fromisoformat(raw.strip()[:10])
+        except ValueError:
+            continue
+        if day < reference:
+            finished.append(day)
+    if not finished:
+        return None
+
+    target = max(finished).isoformat()
+    totals: dict[tuple[tuple[str, str], ...], float] = defaultdict(float)
+    for value, attributes in spec.points:
+        if attributes.get(date_key, "").strip()[:10] != target:
+            continue
+        rest = {k: v for k, v in attributes.items() if k != date_key}
+        totals[tuple(sorted(rest.items()))] += value
+
+    if not totals:
+        return None
+
+    return GaugeSpec(
+        name=f"{spec.name}{CURRENT_DAY_SUFFIX}",
+        unit=spec.unit,
+        description=(
+            f"{spec.description} -- most recent complete day only, published "
+            "without a date attribute so each run appends one point per "
+            "entity and the series forms a daily trend"
+        ),
+        points=[(value, dict(key)) for key, value in sorted(totals.items())],
+    )
 
 
 def _normalize_grpc_endpoint(raw: str) -> tuple[str, bool]:
