@@ -78,14 +78,14 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(rows[0].date, "2026-08-21")
         self.assertEqual(rows[0].cost_usd, 618.98)
 
-    def test_non_foundry_uses_azure_and_service_name(self) -> None:
+    def test_non_foundry_still_uses_azure_foundry(self) -> None:
         payload = _payload(
             [[40.0, 20260821, "Virtual Machines", "Dv5 Series", "Usage", "USD"]]
         )
         rows = azure.rows_from_payload(payload, "staging")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].provider, "azure")
-        self.assertEqual(rows[0].service, "Virtual Machines")
+        self.assertEqual(rows[0].provider, "azure_foundry")
+        self.assertEqual(rows[0].service, "Dv5 Series")
         self.assertEqual(rows[0].env, ENV_DEV)
 
     def test_charge_type_usage_only(self) -> None:
@@ -106,6 +106,8 @@ class ParseTests(unittest.TestCase):
         rows = azure.rows_from_payload(payload, "prod")
         self.assertEqual(rows[0].date, "2026-08-13")
         self.assertEqual(rows[0].cost_usd, 3.5)
+        self.assertEqual(rows[0].provider, "azure_foundry")
+        self.assertEqual(rows[0].service, "Blob")
 
 
 class QueryBodyTests(unittest.TestCase):
@@ -132,7 +134,7 @@ class QueryBodyTests(unittest.TestCase):
 
 
 class FetchTests(unittest.TestCase):
-    def test_token_then_cost_query_and_foundry_split(self) -> None:
+    def test_token_then_cost_query_publishes_all_as_foundry(self) -> None:
         captured: dict[str, object] = {}
 
         def fake_form(url, headers, fields, timeout=60):
@@ -170,11 +172,10 @@ class FetchTests(unittest.TestCase):
         body = captured["query_bodies"][0]
         self.assertEqual(body["dataset"]["filter"]["dimensions"]["values"], ["Usage"])
 
-        by_provider = {row.provider: row for row in rows}
-        self.assertEqual(by_provider["azure_foundry"].service, "Input Tokens")
-        self.assertEqual(by_provider["azure_foundry"].env, ENV_PROD)
-        self.assertEqual(by_provider["azure"].service, "Virtual Machines")
-        self.assertEqual(by_provider["azure"].env, ENV_DEV)
+        self.assertEqual({row.provider for row in rows}, {"azure_foundry"})
+        by_env = {row.env: row for row in rows}
+        self.assertEqual(by_env[ENV_PROD].service, "Input Tokens")
+        self.assertEqual(by_env[ENV_DEV].service, "Dv5 Series")
 
     def test_missing_credentials_raise(self) -> None:
         with self.assertRaises(VendorCostError):
