@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.vendors import (
     aws,
+    azure,
     clickhouse_cloud,
     cloudflare,
     declared,
@@ -23,6 +24,7 @@ from app.vendors.base import (  # re-exported for convenience
 
 VENDORS = {
     "aws": aws,
+    "azure": azure,
     "llm": llm,
     "clickhouse_cloud": clickhouse_cloud,
     "cloudflare": cloudflare,
