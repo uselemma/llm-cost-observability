@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import app.vendors.azure as azure_vendor
 from app.llm_costs import LlmCostError, get_daily_costs
 from app.vendors.base import (
     ENV_PROD,
@@ -23,6 +24,8 @@ from app.vendors.base import (
     CostRow,
     VendorCostError,
 )
+
+AZURE_OPENAI_PROVIDER = "azure-openai"
 
 PROVIDER = "llm"
 UNKNOWN_PROVIDER = "unknown"
@@ -78,6 +81,12 @@ def fetch_with_coverage(
         else None
     )
 
+    # When Azure Cost Management is configured, Foundry invoice rows replace
+    # the derived azure-openai line (~$3.66 of leftover gen_ai.usage.cost).
+    # llm.cost.estimated is published by export_llm_costs, not this adapter,
+    # and stays unchanged.
+    skip_azure_openai = azure_vendor.is_configured(env)
+
     rows = [
         CostRow(
             date=str(row["date"]),
@@ -93,5 +102,9 @@ def fetch_with_coverage(
         )
         for row in payload["rows"]
         if float(row["spend_usd"]) != 0
+        if not (
+            skip_azure_openai
+            and str(row["provider"]).strip().lower() == AZURE_OPENAI_PROVIDER
+        )
     ]
     return rows, warning
