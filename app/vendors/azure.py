@@ -1,10 +1,11 @@
 """Azure Cost Management as a unified-cost provider.
 
-Foundry / Azure OpenAI meters are published as saas.provider=azure_foundry so
-the invoice can replace the derived llm/azure-openai token estimate. Every
-other Azure service lands on saas.provider=azure. ChargeType Usage only --
-credits cover the bill, they do not zero the cost of running the workload
-(same reason AWS drops Credit/Refund).
+Lemma's Azure bill is AI Foundry. Every ActualCost Usage row is published
+as saas.provider=azure_foundry so the invoice can replace the derived
+llm/azure-openai token estimate. saas.service is MeterSubCategory when
+present, otherwise ServiceName. ChargeType Usage only -- credits cover the
+bill, they do not zero the cost of running the workload (same reason AWS
+drops Credit/Refund).
 
 Auth is an AAD app via client-credentials (Cost Management Reader). No Azure
 SDK: token + query are two POSTs through app.vendors._http.
@@ -38,17 +39,6 @@ QUERY_API_VERSION = "2023-11-01"
 MAX_WINDOW_DAYS = 31
 MAX_PAGES = 100
 INCLUDED_CHARGE_TYPES = ("usage",)
-
-# Substring match, case-insensitive, against Cost Management ServiceName.
-# "foundry" also covers "Foundry Models"; the longer aliases are listed so a
-# future rename that drops the word Foundry still classifies as Foundry.
-FOUNDRY_SERVICE_MARKERS = (
-    "foundry models",
-    "azure openai",
-    "cognitive services",
-    "azure ai services",
-    "foundry",
-)
 
 REQUIRED_ENV = (
     "AZURE_TENANT_ID",
@@ -97,11 +87,6 @@ def list_subscriptions(env: dict[str, str] | None = None) -> list[AzureSubscript
 
 def _env_for_subscription(name: str) -> str:
     return ENV_PROD if name.strip().lower() == "prod" else ENV_DEV
-
-
-def _is_foundry(service_name: str) -> bool:
-    lowered = service_name.lower()
-    return any(marker in lowered for marker in FOUNDRY_SERVICE_MARKERS)
 
 
 def _windows(start: date, end: date) -> list[tuple[date, date]]:
@@ -179,10 +164,10 @@ def _cell(row: list[Any], index: int | None, default: str = "") -> Any:
 def rows_from_payload(payload: dict, subscription_name: str) -> list[CostRow]:
     """Map one Cost Management query page onto CostRows.
 
-    Foundry meters -> azure_foundry / MeterSubCategory; everything else ->
-    azure / ServiceName. Non-Usage ChargeType is dropped even if the API
-    filter was omitted, so a mock (and a future API change) cannot sneak a
-    refund into the total.
+    Every Usage row -> azure_foundry / MeterSubCategory (ServiceName if the
+    meter is empty). Non-Usage ChargeType is dropped even if the API filter
+    was omitted, so a mock (and a future API change) cannot sneak a refund
+    into the total.
     """
     props = payload.get("properties") if isinstance(payload.get("properties"), dict) else payload
     columns = list(props.get("columns") or [])
@@ -212,17 +197,11 @@ def rows_from_payload(payload: dict, subscription_name: str) -> list[CostRow]:
             continue
         service_name = str(_cell(raw, service_idx) or "").strip() or "Unknown"
         meter = str(_cell(raw, meter_idx) or "").strip()
-        if _is_foundry(service_name):
-            provider = FOUNDRY_PROVIDER
-            service = meter or service_name
-        else:
-            provider = PROVIDER
-            service = service_name
         rows.append(
             CostRow(
                 date=day,
-                provider=provider,
-                service=service,
+                provider=FOUNDRY_PROVIDER,
+                service=meter or service_name,
                 cost_usd=amount,
                 source=SOURCE_METERED,
                 env=env_name,
