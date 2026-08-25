@@ -55,10 +55,13 @@ class LogicalCallsQueryTests(unittest.TestCase):
         self.assertIn("finish_reason", LIST_SELECT)
         self.assertIn("finish_reason", DETAIL_SELECT)
 
-    def test_unreconciled_cost_is_excluded(self) -> None:
+    def test_unreconciled_cost_uses_cloudflare_estimate(self) -> None:
         self.assertIn("'unreconciled'", self.sql)
         self.assertIn("AS cost_included", self.sql)
         self.assertIn("AS spend_usd", self.sql)
+        self.assertIn("cloudflare_attrs['gen_ai.usage.cost']", self.sql)
+        self.assertIn("cloudflare_root_count > 0", self.sql)
+        # Vercel billed cost is the fallback only when there is no CF root.
         self.assertIn("vercel_billed_cost", self.sql)
 
     def test_exact_cache_hit_requires_explicit_marker(self) -> None:

@@ -160,15 +160,14 @@ def logical_calls_cte(source_where: str = "") -> str:
             ) AS reconciliation_ms,
             toUInt8(
                 exact_cache_hit
-                OR (cloudflare_root_count > 0 AND vercel_root_count > 0)
-                OR (call_id = '' AND cloudflare_root_count > 0)
+                OR cloudflare_root_count > 0
+                OR vercel_root_count > 0
             ) AS cost_included,
             multiIf(
                 exact_cache_hit, 0.,
-                cloudflare_root_count > 0 AND vercel_root_count > 0, vercel_billed_cost,
-                call_id = '' AND cloudflare_root_count > 0,
+                cloudflare_root_count > 0,
                     toFloat64OrZero(cloudflare_attrs['gen_ai.usage.cost']),
-                0.
+                vercel_billed_cost
             ) AS spend_usd,
             vercel_billed_cost AS billed_cost_usd,
             vercel_market_cost AS market_cost_usd,
