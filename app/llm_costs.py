@@ -5,10 +5,9 @@ exhausted ClickHouse Cloud's temporary storage in production. See
 get_daily_costs.
 
 One row per (day, model, provider, feature), aggregated from logical calls so
-dual-gateway (Cloudflare + Vercel) roots are never double-counted. Spend
-follows the projection's own cost semantics: Vercel billed cost for
-reconciled calls, the Cloudflare estimate for legacy calls, zero for exact
-cache hits and calls still awaiting reconciliation.
+dual-gateway (Cloudflare + Vercel) roots are never double-counted. Spend is
+Cloudflare AI Gateway gen_ai.usage.cost whenever a CF root exists, Vercel
+billed cost only for Vercel-only roots, and zero for exact cache hits.
 """
 from __future__ import annotations
 

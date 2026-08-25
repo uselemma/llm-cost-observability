@@ -49,17 +49,16 @@ Custom metadata from the `cf-aig-metadata` header lands as `SpanAttributes` keys
 ### Dual-gateway logical calls
 
 `app/queries.py` groups Cloudflare and Vercel request roots by `call_id`.
-Cloudflare remains canonical for content, timestamp, app trace, attribution, and
-exact-cache state. Vercel is canonical for provider, generation, credential,
-cost, detailed tokens, region, TTFC, and ZDR. Routing/model/provider attempt
-spans are excluded from the list and returned only in call detail.
+Cloudflare remains canonical for content, timestamp, app trace, attribution,
+exact-cache state, and **cost** (`gen_ai.usage.cost`). Vercel is canonical for
+provider, generation, credential, detailed tokens, region, TTFC, and ZDR.
+Routing/model/provider attempt spans are excluded from the list and returned
+only in call detail.
 
-Rows with only one root are `unreconciled` and carry
-`cost_included: false`, preventing ambiguous cost from entering loaded-row
-aggregates. Legacy Cloudflare rows without `call_id` retain the old behavior.
-An exact cache hit is complete with zero new upstream cost only when Cloudflare
-exports an explicit `HIT` cache attribute; absence of Vercel telemetry is never
-treated as proof of a cache hit.
+Unreconciled Cloudflare-only rows (Azure BYOK, no Vercel root) still use
+Cloudflare's per-call cost. Exact cache hits are complete with zero new
+upstream cost only when Cloudflare exports an explicit `HIT` cache attribute;
+absence of Vercel telemetry is never treated as proof of a cache hit.
 
 ## Local setup
 

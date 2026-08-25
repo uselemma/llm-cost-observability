@@ -3,9 +3,10 @@
 Publishes gauges per (day, model, provider, feature) row of the logical-call
 rollup (app.llm_costs):
 
-  llm.cost.estimated          -- daily USD spend (Vercel billed cost for
-                                 reconciled calls, Cloudflare estimate for
-                                 legacy calls). Use for window totals.
+  llm.cost.estimated          -- daily USD spend (Cloudflare AI Gateway
+                                 gen_ai.usage.cost whenever a CF root exists,
+                                 including unreconciled Azure BYOK). Use for
+                                 window totals.
   llm.calls                   -- successful logical calls
   llm.cost.estimated.current  -- spend for the most recent complete day only,
                                  carrying no date attribute. Use for per-model
@@ -73,7 +74,7 @@ def publish_llm_cost_gauges(
         unit="USD",
         description=(
             "Daily LLM spend by model, provider, and feature "
-            "(billed for reconciled calls, estimated for legacy)"
+            "(Cloudflare gen_ai.usage.cost; Vercel billed only if no CF root)"
         ),
         points=[(float(row["spend_usd"]), attrs(row)) for row in rows],
     )
