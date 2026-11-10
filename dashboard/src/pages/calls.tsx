@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { ArrowsClockwise } from '@phosphor-icons/react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import CallsTable from '@/components/calls-table';
 import CallDrawer from '@/components/call-drawer';
 import FilterBar, { type Filters } from '@/components/filter-bar';
-import { ModeToggle } from '@/components/mode-toggle';
+import { PageHeader } from '@/components/app-shell';
 
 type PageSizeOption = 100 | 250 | 500 | 'max';
 
@@ -52,39 +52,38 @@ export default function Calls() {
   );
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <header className="flex items-center justify-between border-b bg-background px-4 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold tracking-tight">LLM call log</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <ModeToggle />
+    <div className="flex h-full flex-col gap-4 p-4">
+      <PageHeader
+        title="LLM call log"
+        actions={
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={isFetching ? 'animate-spin' : ''} />
+            <ArrowsClockwise className={isFetching ? 'animate-spin' : ''} />
             Refresh
           </Button>
+        }
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-card shadow-xs ring-1 ring-foreground/10">
+        <FilterBar filters={filters} onChange={setFilters} availableTags={availableTags} />
+        <Separator />
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {error ? (
+            <div className="p-4 text-body-sm text-destructive">Failed to load: {(error as Error).message}</div>
+          ) : (
+            <CallsTable
+              rows={rows}
+              onSelect={(id, timestamp) => setSelectedCall({ id, timestamp })}
+              loading={isFetching && rows.length === 0}
+              hasMore={!!hasNextPage}
+              loadingMore={isFetchingNextPage}
+              onLoadMore={() => fetchNextPage()}
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+            />
+          )}
         </div>
-      </header>
-
-      <FilterBar filters={filters} onChange={setFilters} availableTags={availableTags} />
-      <Separator />
-
-      <main className="flex-1 overflow-hidden bg-muted">
-        {error ? (
-          <div className="p-4 text-sm text-destructive">Failed to load: {(error as Error).message}</div>
-        ) : (
-          <CallsTable
-            rows={rows}
-            onSelect={(id, timestamp) => setSelectedCall({ id, timestamp })}
-            loading={isFetching && rows.length === 0}
-            hasMore={!!hasNextPage}
-            loadingMore={isFetchingNextPage}
-            onLoadMore={() => fetchNextPage()}
-            pageSize={pageSize}
-            onPageSizeChange={setPageSize}
-          />
-        )}
-      </main>
+      </div>
 
       {selectedCall && (
         <CallDrawer

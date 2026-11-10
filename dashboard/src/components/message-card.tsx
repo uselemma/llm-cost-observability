@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import JsonView from "@uiw/react-json-view";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -75,9 +75,9 @@ export default function MessageCard({
           className="flex w-full items-center gap-3 text-left"
         >
           {open ? (
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            <CaretDown className="size-3.5 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <CaretRight className="size-3.5 shrink-0 text-muted-foreground" />
           )}
           <Badge
             className={cn(

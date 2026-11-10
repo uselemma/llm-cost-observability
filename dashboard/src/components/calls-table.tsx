@@ -1,6 +1,6 @@
 import { Fragment, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Loader2 } from 'lucide-react';
+import { CircleNotch } from '@phosphor-icons/react';
 import type { CallRow } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -74,20 +74,20 @@ export default function CallsTable({
   const tpsPercentiles = percentileSummary(rows.map((row) => tokensPerSecond(row)).filter(isNumber));
 
   return (
-    <div className="flex h-full flex-col bg-muted">
+    <div className="flex h-full flex-col bg-card">
       <Table containerRef={tableContainerRef}>
         <TableHeader>
           <TableRow>
-            <TableHead className="sticky top-0 z-20 w-[160px] bg-muted">Time</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[260px] bg-muted">Tags</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[240px] bg-muted">Model</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[100px] bg-muted">Status</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[100px] bg-muted text-right">Cost</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[180px] bg-muted text-right">Tokens</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[140px] bg-muted text-right">Cached</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[200px] bg-muted text-right">Latency (ms)</TableHead>
-            <TableHead className="sticky top-0 z-20 w-[120px] bg-muted text-right">TPS</TableHead>
-            <TableHead className="sticky top-0 z-20 bg-muted">Output preview</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[160px] bg-card">Time</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[260px] bg-card">Tags</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[240px] bg-card">Model</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-card">Status</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[100px] bg-card text-right">Cost</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[180px] bg-card text-right">Tokens</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[140px] bg-card text-right">Cached</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[200px] bg-card text-right">Latency (ms)</TableHead>
+            <TableHead className="sticky top-0 z-20 w-[120px] bg-card text-right">TPS</TableHead>
+            <TableHead className="sticky top-0 z-20 bg-card">Output preview</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -142,14 +142,14 @@ export default function CallsTable({
           <TableRow className="hover:bg-muted">
             <TableCell
               colSpan={4}
-              className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-[10px] uppercase tracking-wider text-muted-foreground"
+              className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-[10px] uppercase tracking-wider text-muted-foreground"
             >
               Aggregates for loaded rows
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-right font-mono text-[11px]">
               ${aggregates.cost.toFixed(5)}
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-right font-mono text-[11px]">
               <PercentileLines
                 labels={['p50', 'p95', 'p99']}
                 values={[
@@ -159,10 +159,10 @@ export default function CallsTable({
                 ]}
               />
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-right font-mono text-[11px]">
               <CachedTokens read={aggregates.cacheRead} creation={aggregates.cacheCreation} />
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-right font-mono text-[11px]">
               <PercentileLines
                 labels={['p50', 'p95', 'p99']}
                 values={[
@@ -172,7 +172,7 @@ export default function CallsTable({
                 ]}
               />
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95 text-right font-mono text-[11px]">
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95 text-right font-mono text-[11px]">
               <PercentileLines
                 labels={['p50', 'p95', 'p99']}
                 values={[
@@ -182,17 +182,17 @@ export default function CallsTable({
                 ]}
               />
             </TableCell>
-            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-muted/95" />
+            <TableCell className="sticky bottom-0 z-10 border-t border-b-0 bg-card/95" />
           </TableRow>
         </TableFooter>
       </Table>
 
-      <div className="flex items-center justify-center gap-3 border-t bg-muted px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex items-center justify-center gap-3 border-t bg-card px-4 py-3 text-xs text-muted-foreground">
         <span className="tabular-nums">{rows.length.toLocaleString()} loaded</span>
         <RowsPerPageControl pageSize={pageSize} onPageSizeChange={onPageSizeChange} />
         {hasMore ? (
           <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
-            {loadingMore && <Loader2 className="animate-spin" />}
+            {loadingMore && <CircleNotch className="animate-spin" />}
             Load more
           </Button>
         ) : (

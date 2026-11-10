@@ -81,14 +81,14 @@ export default function FilterBar({
   }, [filters.cel]);
 
   return (
-    <div className="flex flex-wrap items-end gap-3 bg-background px-4 py-3">
+    <div className="flex flex-wrap items-end gap-3 px-4 py-3">
       <Field label="Range" htmlFor="range">
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               id="range"
               variant="outline"
-              className="w-64 justify-between bg-background font-normal dark:bg-background"
+              className="w-64 justify-between font-normal dark:bg-background"
             >
               <span>{rangeLabel(rangePreset)}</span>
             </Button>
@@ -144,7 +144,7 @@ export default function FilterBar({
                   e.preventDefault();
                   set('cel', celDraft);
                 }}
-                className="w-[32rem] bg-background font-mono text-xs dark:bg-background"
+                className="w-[32rem] font-mono text-xs dark:bg-background"
               />
             </div>
           </PopoverAnchor>
@@ -189,7 +189,7 @@ export default function FilterBar({
           placeholder="substring of input or output"
           value={filters.q ?? ''}
           onChange={(e) => set('q', e.target.value)}
-          className="w-72 bg-background dark:bg-background"
+          className="w-72"
         />
       </Field>
     </div>

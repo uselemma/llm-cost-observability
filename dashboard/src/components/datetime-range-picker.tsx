@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, parse } from 'date-fns';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarBlank } from '@phosphor-icons/react';
 import type { DateRange } from 'react-day-picker';
 
 import { Button } from '@/components/ui/button';
@@ -98,7 +98,7 @@ export default function DateTimeRangePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="w-72 justify-start font-normal">
-          <CalendarIcon className="mr-2 size-3.5" />
+          <CalendarBlank className="mr-2 size-3.5" />
           <span className="truncate">{summary}</span>
         </Button>
       </PopoverTrigger>

@@ -86,6 +86,53 @@ export type CallsListParams = {
   offset?: number;
 };
 
+export const DIMENSIONS = [
+  'model',
+  'provider',
+  'feature_parent',
+  'feature',
+  'prompt',
+  'project_id',
+  'variant',
+] as const;
+export type Dimension = (typeof DIMENSIONS)[number];
+
+// `<dim>` includes values (IN); `not_<dim>` excludes them (NOT IN).
+export type StatsFilterParams = {
+  since?: string;
+  until?: string;
+  status?: string[];
+} & Partial<Record<Dimension | `not_${Dimension}`, string[]>>;
+
+export type Metrics = {
+  calls: number;
+  spend: number;
+  input_tokens: number;
+  output_tokens: number;
+  errors: number;
+  error_rate: number;
+  unpriced_calls: number;
+  p50_ms: number;
+  p95_ms: number;
+  avg_cost: number;
+};
+
+export type Bucket = '1min' | '5min' | '15min' | '30min' | 'hour' | '6hour' | 'day';
+export type TimeseriesPoint = Metrics & { t: string; key: string };
+export type TimeseriesResponse = {
+  bucket: Bucket;
+  group_by: Dimension | null;
+  keys: string[];
+  series: TimeseriesPoint[];
+};
+export type BreakdownRow = Metrics & { key: string; other_count?: number };
+export type MatrixResponse = {
+  rows: string[];
+  cols: string[];
+  cells: { row: string; col: string; spend: number; calls: number }[];
+};
+export type DimensionValues = Record<string, { value: string; calls: number }[]>;
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -102,6 +149,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) throw new ApiError(res.status, (await res.text()) || res.statusText);
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+function statsQuery(params: Record<string, unknown>): string {
+  const usp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v == null || v === '') return;
+    if (Array.isArray(v)) v.forEach((item) => usp.append(k, String(item)));
+    else if ((k === 'since' || k === 'until') && typeof v === 'string')
+      usp.set(k, normalizeDateTimeParam(v));
+    else usp.set(k, String(v));
+  });
+  return usp.toString();
 }
 
 export const api = {
@@ -130,6 +189,18 @@ export const api = {
   },
   listModels: () => request<{ models: string[] }>('/api/models'),
   listTags: () => request<{ tags: string[] }>('/api/tags'),
+  statsSummary: (f: StatsFilterParams) =>
+    request<Metrics>(`/api/stats/summary?${statsQuery(f)}`),
+  statsTimeseries: (f: StatsFilterParams, o: { bucket: Bucket; group_by?: Dimension }) =>
+    request<TimeseriesResponse>(`/api/stats/timeseries?${statsQuery({ ...f, ...o })}`),
+  statsBreakdown: (f: StatsFilterParams, o: { by: Dimension; limit?: number }) =>
+    request<{ by: Dimension; rows: BreakdownRow[] }>(
+      `/api/stats/breakdown?${statsQuery({ ...f, ...o })}`,
+    ),
+  statsMatrix: (f: StatsFilterParams, o: { rows: Dimension; cols: Dimension }) =>
+    request<MatrixResponse>(`/api/stats/matrix?${statsQuery({ ...f, ...o })}`),
+  statsDimensions: (f: StatsFilterParams) =>
+    request<{ dimensions: DimensionValues }>(`/api/stats/dimensions?${statsQuery(f)}`),
   listCelFields: () => request<{ fields: string[] }>('/api/cel-fields'),
 };
 
