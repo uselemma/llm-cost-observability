@@ -11,3 +11,6 @@
 __pycache__/
 build/
 dist/
+
+# Britti Sans is licensed (Lemma internal): copy locally, never commit to this public repo.
+dashboard/public/fonts/

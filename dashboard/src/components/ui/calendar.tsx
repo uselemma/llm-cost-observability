@@ -8,7 +8,7 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { RiArrowLeftSLine, RiArrowRightSLine, RiArrowDownSLine } from "@remixicon/react"
+import { CaretDown, CaretLeft, CaretRight } from '@phosphor-icons/react';
 
 function Calendar({
   className,
@@ -145,18 +145,18 @@ function Calendar({
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === "left") {
             return (
-              <RiArrowLeftSLine className={cn("size-4", className)} {...props} />
+              <CaretLeft className={cn("size-4", className)} {...props} />
             )
           }
 
           if (orientation === "right") {
             return (
-              <RiArrowRightSLine className={cn("size-4", className)} {...props} />
+              <CaretRight className={cn("size-4", className)} {...props} />
             )
           }
 
           return (
-            <RiArrowDownSLine className={cn("size-4", className)} {...props} />
+            <CaretDown className={cn("size-4", className)} {...props} />
           )
         },
         DayButton: ({ ...props }) => (
