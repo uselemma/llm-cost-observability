@@ -30,10 +30,12 @@ from app.queries import (
     VERCEL_SOURCE_EXPR,
     logical_calls_cte,
 )
+from app.stats import router as stats_router
 
 DASHBOARD_DIST = Path(os.environ.get("DASHBOARD_DIST", "dashboard/dist"))
 
 app = FastAPI(title="LLM cost observability", docs_url=None, redoc_url=None)
+app.include_router(stats_router)
 
 
 def _parse_query_datetime(value: str, field: str) -> str:
