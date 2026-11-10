@@ -5,7 +5,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { RiCloseLine } from "@remixicon/react"
+import { X } from '@phosphor-icons/react';
 
 function Dialog({
   ...props
@@ -74,7 +74,7 @@ function DialogContent({
               className="absolute top-2 right-2"
               size="icon-sm"
             >
-              <RiCloseLine
+              <X
               />
               <span className="sr-only">Close</span>
             </Button>

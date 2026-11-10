@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, X } from 'lucide-react';
+import { CaretUpDown, Check, X } from '@phosphor-icons/react';
 import { api } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,10 +63,10 @@ export default function TagSelect({ value, onChange, fallbackTags = [] }: Props)
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-72 justify-between bg-background font-normal dark:bg-background"
+            className="w-72 justify-between font-normal dark:bg-background"
           >
             <span className="truncate text-left">{summary}</span>
-            <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+            <CaretUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">

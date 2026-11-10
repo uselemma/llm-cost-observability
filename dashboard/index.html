@@ -3,11 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLM call log</title>
+    <title>LLM usage</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       // Apply theme before first paint to avoid flash.
       (function () {
         var t = localStorage.getItem('theme');
+        var q = new URLSearchParams(location.search).get('theme');
+        if (q === 'dark' || q === 'light') t = q;
         if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         if (t === 'dark') document.documentElement.classList.add('dark');
       })();
