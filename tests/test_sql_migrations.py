@@ -19,16 +19,22 @@ def _statement(name: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.startswith("--")).strip()
 
 
+def _squash(sql: str) -> str:
+    """Drop all whitespace so multi-line formatting compares equal to 004's single line."""
+    return re.sub(r"\s+", "", sql)
+
+
 def _tuple_type(sql: str) -> str:
-    match = re.search(r"llm_usage (Tuple\([^)]*\))", sql)
+    match = re.search(r"llm_usage(Tuple\([^)]*\))", _squash(sql))
     assert match, "no llm_usage Tuple type"
     return match.group(1)
 
 
 def _lambda(sql: str) -> str:
-    start = sql.index("arrayMap(u ->")
-    end = sql.index(", [", start)
-    return sql[start:end]
+    squashed = _squash(sql)
+    start = squashed.index("arrayMap(u->")
+    end = squashed.index(",[", start)
+    return squashed[start:end]
 
 
 class LlmUsageRawMigrationTests(unittest.TestCase):
@@ -52,31 +58,43 @@ class LlmUsageRawMigrationTests(unittest.TestCase):
         self.assertEqual(_lambda(self.new), _lambda(self.old))
 
 
+USAGE_EXPR = (
+    "JSONExtractRaw(if(SpanAttributes['gen_ai.completion_json']!='',"
+    "SpanAttributes['gen_ai.completion_json'],SpanAttributes['gen_ai.output.messages']),'usage')"
+)
+
+
 class PurgeMigrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.sql = _statement("006_purge_llm_content.sql")
+        self.flat = _squash(self.sql)
 
     def test_strips_exactly_the_four_keys(self) -> None:
-        match = re.search(r"k NOT IN \(([^)]*)\)", self.sql)
+        match = re.search(r"kNOTIN\(([^)]*)\)", self.flat)
         assert match
         self.assertEqual(set(re.findall(r"'([^']+)'", match.group(1))), set(CONTENT_KEYS))
 
-    def test_preserves_usage_via_raw_key(self) -> None:
-        self.assertIn("mapUpdate(SpanAttributes, map('llm_usage.raw'", self.sql)
+    def test_usage_is_written_to_raw_key_once_and_matches_005(self) -> None:
+        self.assertIn("mapUpdate(SpanAttributes,map('llm_usage.raw',", self.flat)
+        self.assertEqual(self.flat.count(USAGE_EXPR), 1)
+        self.assertEqual(_squash(_statement("005_llm_usage_raw.sql")).count(USAGE_EXPR), 1)
+        # An existing llm_usage.raw wins over re-extraction.
+        self.assertIn("if(SpanAttributes['llm_usage.raw']!='',SpanAttributes['llm_usage.raw'],", self.flat)
 
     def test_single_partition_clause_between_assignment_and_where(self) -> None:
-        self.assertEqual(self.sql.count("IN PARTITION ID '{partition_id}'"), 1)
-        self.assertEqual(self.sql.count("{partition_id}"), 1)
-        update = self.sql.index("UPDATE SpanAttributes =")
-        part = self.sql.index("IN PARTITION ID")
-        where = self.sql.index(" WHERE ")
+        self.assertEqual(self.flat.count("INPARTITIONID'{partition_id}'"), 1)
+        self.assertEqual(self.flat.count("{partition_id}"), 1)
+        update = self.flat.index("UPDATESpanAttributes=")
+        part = self.flat.index("INPARTITIONID")
+        where = self.flat.index("WHEREmapContains")
         self.assertLess(update, part)
         self.assertLess(part, where)
 
     def test_where_selects_only_rows_with_content(self) -> None:
-        where = self.sql[self.sql.index(" WHERE ") :]
+        where = self.flat[self.flat.index("WHEREmapContains") :]
         for key in CONTENT_KEYS:
-            self.assertIn(f"mapContains(SpanAttributes, '{key}')", where)
+            self.assertIn(f"mapContains(SpanAttributes,'{key}')", where)
+        self.assertEqual(where.count("mapContains"), 4)
 
 
 if __name__ == "__main__":

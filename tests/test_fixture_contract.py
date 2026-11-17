@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from app.queries import ATTEMPTS_SELECT, logical_calls_cte
+from app.queries import ATTEMPTS_SELECT, STRIPPED_ATTRIBUTES_JSON, logical_calls_cte
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dual_gateway_spans.json"
 
@@ -39,7 +39,7 @@ class DocumentedSpanFixtureTests(unittest.TestCase):
             self.assertIn(attribute, self.projection)
 
     def test_attempts_are_not_roots_and_have_detail_fields(self) -> None:
-        self.assertIn("AS metadata", ATTEMPTS_SELECT)
+        self.assertIn(f"{STRIPPED_ATTRIBUTES_JSON} AS metadata", ATTEMPTS_SELECT)
         for attempt in self.fixture["attempts"]:
             self.assertTrue(attempt["parent_span_id"])
             for attribute in attempt["span_attributes"]:

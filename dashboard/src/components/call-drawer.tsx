@@ -8,7 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import MessageCard from "@/components/message-card";
+import JsonCard from "@/components/json-card";
 import { parseApiTimestamp } from "@/lib/datetime";
 
 export default function CallDrawer({
@@ -125,13 +125,7 @@ export default function CallDrawer({
             </div>
 
             <Section title="Metadata">
-              <MessageCard
-                message={{
-                  role: "metadata",
-                  content: data.metadata || null,
-                }}
-                defaultOpen={false}
-              />
+              <JsonCard title="Metadata" json={data.metadata} />
             </Section>
 
             {data.error_message && (

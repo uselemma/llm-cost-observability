@@ -6,9 +6,11 @@ VERCEL_SOURCE_EXPR = "ResourceAttributes['service.namespace'] = 'vercel'"
 VERCEL_ROOT_EXPR = f"({VERCEL_SOURCE_EXPR} AND empty(ParentSpanId))"
 ROOT_FILTER = f"({SERVICE_FILTER} AND (NOT ({VERCEL_SOURCE_EXPR}) OR empty(ParentSpanId)))"
 
-# Prompt and response text is not stored (the collector drops it before export, and
-# sql/006 purges older rows), so no query selects these keys and the metadata views
-# strip them for rows written before the purge.
+# Prompt and response text is not stored: the collector's transform/strip_llm_content
+# processor (uselemma/infra, aig-otel-collector) drops it before export, and sql/006
+# removes it from older rows. That processor is the authority. These four keys are the
+# ones it deletes; the dashboard never selects them, and strips them from the metadata
+# JSON and rejects them in CEL filters as defence for rows written before the purge.
 CONTENT_ATTRIBUTE_KEYS = (
     "gen_ai.input.messages",
     "gen_ai.output.messages",

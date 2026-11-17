@@ -19,6 +19,10 @@ CONTENT_KEYS = (
 )
 
 
+# The single place the keys may be named: the strip list and what it is built from.
+STRIP_LIST_CONSTANTS = {"CONTENT_ATTRIBUTE_KEYS", "_CONTENT_KEYS_SQL", "STRIPPED_ATTRIBUTES_JSON"}
+
+
 def _without_strip_list(sql: str) -> str:
     return sql.replace(queries.STRIPPED_ATTRIBUTES_JSON, "")
 
@@ -45,17 +49,15 @@ class SqlIsContentFreeTests(unittest.TestCase):
         self.assertIn("mapFilter", queries.STRIPPED_ATTRIBUTES_JSON)
 
     def test_query_modules_never_name_content_keys(self) -> None:
-        strings = {
-            "logical_calls_cte": queries.logical_calls_cte("Timestamp > now()"),
-            "queries.LIST_SELECT": queries.LIST_SELECT,
-            "queries.DETAIL_SELECT": queries.DETAIL_SELECT,
-            "queries.ATTEMPTS_SELECT": queries.ATTEMPTS_SELECT,
-        }
-        for name, value in vars(span_queries).items():
-            if isinstance(value, str):
-                strings[f"span_queries.{name}"] = value
-            elif isinstance(value, dict):
-                strings[f"span_queries.{name}"] = repr(value)
+        strings = {"logical_calls_cte": queries.logical_calls_cte("Timestamp > now()")}
+        for module in (queries, span_queries):
+            for name, value in vars(module).items():
+                if name.startswith("__") or name in STRIP_LIST_CONSTANTS:
+                    continue
+                if isinstance(value, str):
+                    strings[f"{module.__name__}.{name}"] = value
+                elif isinstance(value, (dict, tuple)):
+                    strings[f"{module.__name__}.{name}"] = repr(value)
         for name, sql in strings.items():
             for key in CONTENT_KEYS:
                 self.assertNotIn(key, _without_strip_list(sql), f"{name} reads {key}")

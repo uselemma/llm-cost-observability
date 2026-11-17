@@ -8,8 +8,7 @@ from __future__ import annotations
 SERVICE_FILTER = "ServiceName = 'ai-gateway'"
 
 # The hot fields are read from the materialized `llm_meta` tuple column rather than
-# SpanAttributes: reading any map key decompresses the whole map, which is most of
-# the table's bytes. See sql/003_llm_meta.sql.
+# SpanAttributes: reading any map key decompresses the whole map. See sql/003_llm_meta.sql.
 MODEL_EXPR = "llm_meta.model"
 PROVIDER_EXPR = "llm_meta.provider"
 # Cost of a call: what the gateway recorded, else the cost the upstream billed (response body), else (custom providers,
