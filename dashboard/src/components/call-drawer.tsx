@@ -124,9 +124,7 @@ export default function CallDrawer({
               />
             </div>
 
-            <Section title="Metadata">
-              <JsonCard title="Metadata" json={data.metadata} />
-            </Section>
+            <JsonCard title="Metadata" json={data.metadata} />
 
             {data.error_message && (
               <pre className="whitespace-pre-wrap border border-destructive/40 bg-destructive/10 p-3 text-[11px] text-destructive">

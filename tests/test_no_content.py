@@ -10,13 +10,8 @@ from fastapi.testclient import TestClient
 from app import queries, span_queries
 from app.cel_filter import compile_cel_filter
 from app.main import app
+from tests._content_keys import CONTENT_KEYS
 
-CONTENT_KEYS = (
-    "gen_ai.input.messages",
-    "gen_ai.output.messages",
-    "gen_ai.prompt_json",
-    "gen_ai.completion_json",
-)
 
 
 # The single place the keys may be named: the strip list and what it is built from.

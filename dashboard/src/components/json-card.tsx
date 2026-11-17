@@ -42,17 +42,15 @@ function parseJson(text: string): object | undefined {
 export default function JsonCard({
   title,
   json,
-  defaultOpen = false,
 }: {
   title: string;
   json: string;
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(false);
   const value = parseJson(json);
 
   return (
-    <Card size="sm" className="gap-0 gap-3!">
+    <Card size="sm" className="gap-3!">
       <CardHeader className="p-0">
         <button
           type="button"
