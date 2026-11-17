@@ -95,9 +95,7 @@ SELECT
   intDiv(Duration, 1000000) AS latency_ms,
   toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS spend_usd,
   SpanAttributes['feature'] AS feature,
-  SpanAttributes['prompt'] AS prompt,
-  SpanAttributes['gen_ai.prompt_json'] AS input_messages,
-  SpanAttributes['gen_ai.completion_json'] AS output_text
+  SpanAttributes['prompt'] AS prompt
 FROM otel_traces
 WHERE ServiceName = 'ai-gateway'
   AND SpanId = '...'

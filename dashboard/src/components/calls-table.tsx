@@ -87,13 +87,12 @@ export default function CallsTable({
             <TableHead className="sticky top-0 z-20 w-[140px] bg-card text-right">Cached</TableHead>
             <TableHead className="sticky top-0 z-20 w-[200px] bg-card text-right">Latency (ms)</TableHead>
             <TableHead className="sticky top-0 z-20 w-[120px] bg-card text-right">TPS</TableHead>
-            <TableHead className="sticky top-0 z-20 bg-card">Output preview</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {topPaddingHeight > 0 && (
             <TableRow className="pointer-events-none hover:bg-transparent">
-              <TableCell colSpan={10} className="border-b-0 p-0" style={{ height: topPaddingHeight }} />
+              <TableCell colSpan={9} className="border-b-0 p-0" style={{ height: topPaddingHeight }} />
             </TableRow>
           )}
           {virtualRows.map((virtualRow) => {
@@ -128,13 +127,12 @@ export default function CallsTable({
               <TableCell className="text-right tabular-nums text-muted-foreground">
                 {formatTps(tokensPerSecond(r))}
               </TableCell>
-              <TableCell className="max-w-[1px] truncate">{r.output_preview || '—'}</TableCell>
             </TableRow>
             );
           })}
           {bottomPaddingHeight > 0 && (
             <TableRow className="pointer-events-none hover:bg-transparent">
-              <TableCell colSpan={10} className="border-b-0 p-0" style={{ height: bottomPaddingHeight }} />
+              <TableCell colSpan={9} className="border-b-0 p-0" style={{ height: bottomPaddingHeight }} />
             </TableRow>
           )}
         </TableBody>

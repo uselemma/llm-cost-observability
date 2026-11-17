@@ -11,8 +11,6 @@
       "prompt": "behavior-issue-explorer-v1",
       "project_id": "project-1",
       "experiment_variant": "[\"experiment-1\",\"structured\"]",
-      "gen_ai.prompt_json": "[{\"role\":\"user\",\"content\":\"hello\"}]",
-      "gen_ai.completion_json": "[{\"role\":\"assistant\",\"content\":\"hi\"}]",
       "gen_ai.request.model": "deepseek/deepseek-v4-flash"
     }
   },

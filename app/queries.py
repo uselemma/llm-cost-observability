@@ -6,6 +6,22 @@ VERCEL_SOURCE_EXPR = "ResourceAttributes['service.namespace'] = 'vercel'"
 VERCEL_ROOT_EXPR = f"({VERCEL_SOURCE_EXPR} AND empty(ParentSpanId))"
 ROOT_FILTER = f"({SERVICE_FILTER} AND (NOT ({VERCEL_SOURCE_EXPR}) OR empty(ParentSpanId)))"
 
+# Prompt and response text is not stored: the collector's transform/strip_llm_content
+# processor (uselemma/infra, aig-otel-collector) drops it before export, and sql/006
+# removes it from older rows. That processor is the authority. These four keys are the
+# ones it deletes; the dashboard never selects them, and strips them from the metadata
+# JSON and rejects them in CEL filters as defence for rows written before the purge.
+CONTENT_ATTRIBUTE_KEYS = (
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "gen_ai.prompt_json",
+    "gen_ai.completion_json",
+)
+_CONTENT_KEYS_SQL = ", ".join(f"'{key}'" for key in CONTENT_ATTRIBUTE_KEYS)
+STRIPPED_ATTRIBUTES_JSON = (
+    f"toJSONString(mapFilter((k, v) -> k NOT IN ({_CONTENT_KEYS_SQL}), SpanAttributes))"
+)
+
 # Vercel emits reporting tags as one string attribute. Accept JSON arrays,
 # comma-separated values, and the direct call_id used by the infra fixture.
 VERCEL_TAG_CALL_ID_EXPR = (
@@ -203,18 +219,6 @@ def logical_calls_cte(source_where: str = "") -> str:
             vercel_attrs['vercel.ai_gateway.region'] AS region,
             vercel_attrs['vercel.ai_gateway.zdr.requested'] AS zdr_requested,
             cloudflare_attrs AS SpanAttributes,
-            cloudflare_attrs['gen_ai.prompt_json'] AS cf_prompt_json,
-            cloudflare_attrs['gen_ai.completion_json'] AS cf_completion_json,
-            if(
-                cloudflare_attrs['gen_ai.prompt_json'] != '',
-                cloudflare_attrs['gen_ai.prompt_json'],
-                cloudflare_attrs['gen_ai.input.messages']
-            ) AS input_messages,
-            if(
-                cloudflare_attrs['gen_ai.completion_json'] != '',
-                cloudflare_attrs['gen_ai.completion_json'],
-                cloudflare_attrs['gen_ai.output.messages']
-            ) AS output_text,
             if(
                 cloudflare_root_count > 0,
                 cloudflare_status_message,
@@ -260,8 +264,6 @@ TOTAL_TOKENS_EXPR = (
 )
 LATENCY_MS_EXPR = "latency_ms"
 STATUS_EXPR = "status"
-INPUT_MESSAGES_EXPR = "input_messages"
-OUTPUT_TEXT_EXPR = "output_text"
 TAGS_EXPR = "tags"
 
 LIST_SELECT = f"""
@@ -282,7 +284,6 @@ LIST_SELECT = f"""
     {LATENCY_MS_EXPR} AS latency_ms,
     ttft_ms,
     {TAGS_EXPR} AS tags,
-    substring({OUTPUT_TEXT_EXPR}, 1, 240) AS output_preview,
     reconciliation_status,
     is_complete,
     reconciliation_overdue,
@@ -309,7 +310,6 @@ DETAIL_SELECT = f"""
     {LATENCY_MS_EXPR} AS latency_ms,
     ttft_ms,
     {TAGS_EXPR} AS tags,
-    substring({OUTPUT_TEXT_EXPR}, 1, 240) AS output_preview,
     toUInt32(0) AS audio_tokens,
     toUInt32(0) AS image_tokens,
     error_message,
@@ -318,11 +318,7 @@ DETAIL_SELECT = f"""
     CAST(NULL AS Nullable(Float32)) AS top_p,
     CAST(NULL AS Nullable(UInt32)) AS max_tokens,
     CAST(NULL AS Nullable(Float32)) AS presence_penalty,
-    toJSONString(SpanAttributes) AS metadata,
-    {INPUT_MESSAGES_EXPR} AS input_messages,
-    {OUTPUT_TEXT_EXPR} AS output_text,
-    '' AS reasoning_content,
-    '' AS tool_calls,
+    {STRIPPED_ATTRIBUTES_JSON} AS metadata,
     call_id,
     cloudflare_span_id,
     vercel_span_id,
@@ -343,7 +339,7 @@ DETAIL_SELECT = f"""
     zdr_requested
 """
 
-ATTEMPTS_SELECT = """
+ATTEMPTS_SELECT = f"""
     SpanId AS span_id,
     ParentSpanId AS parent_span_id,
     SpanName AS name,
@@ -367,7 +363,7 @@ ATTEMPTS_SELECT = """
     ) AS configured_timeout_ms,
     SpanAttributes['vercel.ai_gateway.credential.type'] AS credential_type,
     SpanAttributes['vercel.ai_gateway.region'] AS region,
-    toJSONString(SpanAttributes) AS metadata
+    {STRIPPED_ATTRIBUTES_JSON} AS metadata
 """
 
 # Map CEL field names → (ClickHouse SQL expression, type).

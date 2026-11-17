@@ -7,19 +7,15 @@ from __future__ import annotations
 # Base filter for all dashboard queries.
 SERVICE_FILTER = "ServiceName = 'ai-gateway'"
 
-# Attribute helpers — CF docs use gen_ai.model.provider / prompt_json;
-# some exporters use gen_ai.provider.name / input.messages. Prefer CF, fall back.
-#
 # The hot fields are read from the materialized `llm_meta` tuple column rather than
-# SpanAttributes: reading any map key decompresses the whole map, which also holds
-# the prompt/completion bodies (~98% of the table). See sql/003_llm_meta.sql.
+# SpanAttributes: reading any map key decompresses the whole map. See sql/003_llm_meta.sql.
 MODEL_EXPR = "llm_meta.model"
 PROVIDER_EXPR = "llm_meta.provider"
 # Cost of a call: what the gateway recorded, else the cost the upstream billed (response body), else (custom providers,
 # embeddings), tokens x the models.dev price for that provider/model (see app/pricing.py).
 # Cached input is priced at the cache-read rate and cache writes at the cache-write rate;
-# the cache counts come from llm_usage (sql/004_llm_usage.sql), parsed once from the response
-# body. Without them, cache-heavy traffic would be overstated several-fold.
+# the cache counts come from llm_usage (sql/005_llm_usage_raw.sql), parsed once from the
+# response usage block. Without them, cache-heavy traffic would be overstated several-fold.
 # The price arrays are query parameters: every query using SPEND_EXPR must bind
 # pricing.query_params().
 _PRICED_KEY = "concat(llm_meta.provider, '|', llm_meta.model)"
@@ -48,19 +44,9 @@ LATENCY_MS_EXPR = "toUInt32(intDiv(Duration, 1000000))"
 STATUS_EXPR = (
     "if(StatusCode = 'STATUS_CODE_ERROR', 'failure', 'success')"
 )
-INPUT_MESSAGES_EXPR = (
-    "if(SpanAttributes['gen_ai.prompt_json'] != '', "
-    "SpanAttributes['gen_ai.prompt_json'], "
-    "SpanAttributes['gen_ai.input.messages'])"
-)
-OUTPUT_TEXT_EXPR = (
-    "if(SpanAttributes['gen_ai.completion_json'] != '', "
-    "SpanAttributes['gen_ai.completion_json'], "
-    "SpanAttributes['gen_ai.output.messages'])"
-)
 
 # Reconstruct feature:/prompt:/variant:/project_id: tags from CF metadata attrs.
-# Reads llm_meta (not SpanAttributes) so tag filters and /api/tags avoid the body-heavy map.
+# Reads llm_meta (not SpanAttributes) so tag filters and /api/tags avoid the wide map.
 TAGS_EXPR = """arrayFilter(
     x -> x != '',
     [
@@ -98,61 +84,6 @@ STATS_AGGREGATES = f"""
     countIf(NOT ({ERROR_PRED}) AND {SPEND_EXPR} = 0) AS unpriced_calls,
     quantile(0.5)(Duration / 1000000) AS p50_ms,
     quantile(0.95)(Duration / 1000000) AS p95_ms
-"""
-
-LIST_SELECT = f"""
-    SpanId AS request_id,
-    Timestamp AS timestamp,
-    {MODEL_EXPR} AS model,
-    {PROVIDER_EXPR} AS provider,
-    '' AS team,
-    {STATUS_EXPR} AS status,
-    '' AS finish_reason,
-    {SPEND_EXPR} AS spend_usd,
-    {PROMPT_TOKENS_EXPR} AS prompt_tokens,
-    {COMPLETION_TOKENS_EXPR} AS completion_tokens,
-    toUInt32(0) AS reasoning_tokens,
-    toUInt32(0) AS cache_read_tokens,
-    toUInt32(0) AS cache_creation_tokens,
-    {TOTAL_TOKENS_EXPR} AS total_tokens,
-    {LATENCY_MS_EXPR} AS latency_ms,
-    toUInt32(0) AS ttft_ms,
-    {TAGS_EXPR} AS tags,
-    substring({OUTPUT_TEXT_EXPR}, 1, 240) AS output_preview
-"""
-
-DETAIL_SELECT = f"""
-    SpanId AS request_id,
-    Timestamp AS timestamp,
-    {MODEL_EXPR} AS model,
-    {PROVIDER_EXPR} AS provider,
-    '' AS team,
-    {STATUS_EXPR} AS status,
-    '' AS finish_reason,
-    {SPEND_EXPR} AS spend_usd,
-    {PROMPT_TOKENS_EXPR} AS prompt_tokens,
-    {COMPLETION_TOKENS_EXPR} AS completion_tokens,
-    toUInt32(0) AS reasoning_tokens,
-    toUInt32(0) AS cache_read_tokens,
-    toUInt32(0) AS cache_creation_tokens,
-    {TOTAL_TOKENS_EXPR} AS total_tokens,
-    {LATENCY_MS_EXPR} AS latency_ms,
-    toUInt32(0) AS ttft_ms,
-    {TAGS_EXPR} AS tags,
-    substring({OUTPUT_TEXT_EXPR}, 1, 240) AS output_preview,
-    toUInt32(0) AS audio_tokens,
-    toUInt32(0) AS image_tokens,
-    StatusMessage AS error_message,
-    toUInt8(0) AS num_retries,
-    CAST(NULL AS Nullable(Float32)) AS temperature,
-    CAST(NULL AS Nullable(Float32)) AS top_p,
-    CAST(NULL AS Nullable(UInt32)) AS max_tokens,
-    CAST(NULL AS Nullable(Float32)) AS presence_penalty,
-    '' AS metadata,
-    {INPUT_MESSAGES_EXPR} AS input_messages,
-    {OUTPUT_TEXT_EXPR} AS output_text,
-    '' AS reasoning_content,
-    '' AS tool_calls
 """
 
 # Map CEL field names → (ClickHouse SQL expression, type).

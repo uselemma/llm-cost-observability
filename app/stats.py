@@ -1,7 +1,7 @@
 """Aggregate usage endpoints for the dashboard charts.
 
 Every query is time-bounded (see filters.time_where) and only touches specific
-SpanAttributes keys — never the prompt/completion bodies, which make scans slow.
+SpanAttributes keys. Prompt and response content is not stored.
 """
 from __future__ import annotations
 
@@ -61,10 +61,10 @@ def _metrics(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# SpanAttributes also holds the prompt/completion bodies and ClickHouse reads the
-# whole map column, so each query scans a lot of data. Cache briefly (a page load
-# fires several queries and filter toggles repeat them). Cap runtime on the
-# ClickHouse user (max_execution_time), since read-only users can't set it per query.
+# Reading any SpanAttributes key makes ClickHouse decompress the whole map column, so
+# these queries are not cheap. Cache briefly (a page load fires several queries and filter
+# toggles repeat them). Cap runtime on the ClickHouse user (max_execution_time), since
+# read-only users can't set it per query.
 CACHE_TTL_S = 60
 _cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
