@@ -183,10 +183,10 @@ export default function FilterBar({
           </PopoverContent>
         </Popover>
       </Field>
-      <Field label="Search bodies" htmlFor="q">
+      <Field label="Search" htmlFor="q">
         <Input
           id="q"
-          placeholder="substring of input or output"
+          placeholder="request id, call id, model, tag"
           value={filters.q ?? ''}
           onChange={(e) => set('q', e.target.value)}
           className="w-72"

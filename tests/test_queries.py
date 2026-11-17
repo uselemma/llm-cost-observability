@@ -28,8 +28,6 @@ class LogicalCallsQueryTests(unittest.TestCase):
 
     def test_cloudflare_and_vercel_fields_have_explicit_ownership(self) -> None:
         for cloudflare_field in (
-            "gen_ai.prompt_json",
-            "gen_ai.completion_json",
             "feature",
             "prompt",
             "project_id",
@@ -50,6 +48,10 @@ class LogicalCallsQueryTests(unittest.TestCase):
             "vercel.ai_gateway.zdr.requested",
         ):
             self.assertIn(vercel_field, self.sql)
+
+    def test_message_content_is_not_projected(self) -> None:
+        for key in ("gen_ai.prompt_json", "gen_ai.completion_json"):
+            self.assertNotIn(key, self.sql)
 
     def test_final_outcome_is_retained_in_list_and_detail(self) -> None:
         self.assertIn("finish_reason", LIST_SELECT)

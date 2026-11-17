@@ -40,7 +40,7 @@ If a ClickHouse MCP is configured, run selects against that service with
 | `gen_ai.model.provider` | Provider (CF docs); some spans may use `gen_ai.provider.name` |
 | `gen_ai.usage.input_tokens` / `output_tokens` | Token counts (string-encoded in the map) |
 | `gen_ai.usage.cost` | Estimated USD cost |
-| `gen_ai.prompt_json` / `gen_ai.completion_json` | Request / response bodies |
+| `llm_usage.raw` | The response `usage` object (JSON); source of the `llm_usage` column |
 | `feature`, `prompt`, `variant`, `project_id` | From `cf-aig-metadata` |
 
 Cast numeric attrs with `toFloat64OrZero(...)` / `toUInt32OrZero(...)`.
@@ -151,9 +151,7 @@ SELECT
   Timestamp, SpanId, StatusCode,
   intDiv(Duration, 1000000) AS latency_ms,
   toFloat64OrZero(SpanAttributes['gen_ai.usage.cost']) AS spend_usd,
-  SpanAttributes['feature'], SpanAttributes['prompt'],
-  SpanAttributes['gen_ai.prompt_json'],
-  SpanAttributes['gen_ai.completion_json']
+  SpanAttributes['feature'], SpanAttributes['prompt']
 FROM otel_traces
 WHERE ServiceName = 'ai-gateway'
   AND SpanId = '...'
@@ -164,7 +162,9 @@ LIMIT 1;
 
 - **`gen_ai.usage.cost` is an estimate** from AI Gateway (token × price table),
   not the provider invoice.
-- **Bodies are heavy** — don't `SELECT` prompt/completion JSON for large scans.
+- **Message content is not stored** — the collector drops `gen_ai.input.messages`,
+  `gen_ai.output.messages`, `gen_ai.prompt_json` and `gen_ai.completion_json`, so there
+  is no prompt or response text to query.
 - **Metadata key cap** — CF limits how many `cf-aig-metadata` keys you can send.
 - Filter failures out of cost rollups with `StatusCode != 'STATUS_CODE_ERROR'`.
 

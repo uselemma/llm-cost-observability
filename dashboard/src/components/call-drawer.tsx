@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -11,10 +10,6 @@ import {
 } from "@/components/ui/sheet";
 import MessageCard from "@/components/message-card";
 import { parseApiTimestamp } from "@/lib/datetime";
-import {
-  parseInputMessages,
-  parseOutputMessages,
-} from "@/lib/parse-call-io";
 
 export default function CallDrawer({
   requestId,
@@ -29,11 +24,6 @@ export default function CallDrawer({
     queryKey: ["call", requestId, timestamp],
     queryFn: () => api.getCall(requestId, timestamp),
   });
-
-  const inputMessages = data ? parseInputMessages(data.input_messages) : [];
-  const outputMessages = data
-    ? parseOutputMessages(data.output_text || "")
-    : [];
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -185,53 +175,6 @@ export default function CallDrawer({
                 </div>
               </Section>
             )}
-
-            <Separator />
-
-            <Section title="Input">
-              {inputMessages.length === 0 ? (
-                <pre className="overflow-x-auto whitespace-pre-wrap break-words bg-muted p-3 font-mono text-[11px]">
-                  {data.input_messages || "—"}
-                </pre>
-              ) : (
-                <div className="space-y-2">
-                  {inputMessages.map((m, i) => (
-                    <MessageCard key={i} message={m} />
-                  ))}
-                </div>
-              )}
-            </Section>
-
-            {(outputMessages.length > 0 ||
-              data.reasoning_content ||
-              data.tool_calls) && (
-              <Section title="Output">
-                <div className="space-y-2">
-                  {data.reasoning_content && (
-                    <MessageCard
-                      message={{
-                        role: "reasoning",
-                        content: data.reasoning_content,
-                      }}
-                    />
-                  )}
-                  {outputMessages.map((m, i) => (
-                    <MessageCard
-                      key={i}
-                      message={{
-                        ...m,
-                        // Legacy separate tool_calls column when present.
-                        tool_calls:
-                          m.tool_calls ??
-                          (i === 0 && data.tool_calls
-                            ? safeJson(data.tool_calls)
-                            : undefined),
-                      }}
-                    />
-                  ))}
-                </div>
-              </Section>
-            )}
           </div>
         )}
       </SheetContent>
@@ -307,12 +250,4 @@ function tokensPerSecond({
 function formatTps(tps: number | null): string {
   if (tps == null || !Number.isFinite(tps)) return "—";
   return `${tps >= 10 ? tps.toFixed(0) : tps.toFixed(1)} tok/s`;
-}
-
-function safeJson(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return s;
-  }
 }

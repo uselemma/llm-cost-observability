@@ -41,7 +41,12 @@ Filter: `ServiceName = 'ai-gateway'`
 | `latency_ms` | `Duration` (ns → ms) |
 | `tags` | rebuilt from `feature`, `prompt`, `variant`, `project_id` attrs |
 | `status` | `StatusCode` → `success` / `failure` |
-| `input_messages` / `output_text` | `gen_ai.prompt_json` / `gen_ai.completion_json` |
+
+Prompt and response text is not stored: the collector drops `gen_ai.input.messages`,
+`gen_ai.output.messages`, `gen_ai.prompt_json` and `gen_ai.completion_json` before export
+(`sql/006_purge_llm_content.sql` removes them from older rows), and the dashboard never
+reads or shows them. The response's `usage` object is kept as `llm_usage.raw`, which the
+`llm_usage` column reads (`sql/005_llm_usage_raw.sql`).
 
 Custom metadata from the `cf-aig-metadata` header lands as `SpanAttributes` keys
 (see integrate skill).
@@ -108,8 +113,8 @@ cd dashboard && npm ci && npm run build
 | Route | Notes |
 |-------|-------|
 | `GET /api/me` | Always `{ authenticated: true, env: null }` |
-| `GET /api/calls` | Filters: `since`, `until`, `model`, `status`, `tag`, `q`, `cel`, `limit`, `offset` |
-| `GET /api/calls/{request_id}` | Logical-call detail including message bodies and Vercel attempt spans |
+| `GET /api/calls` | Filters: `since`, `until`, `model`, `status`, `tag`, `q` (request id, call id, model or tag), `cel`, `limit`, `offset` |
+| `GET /api/calls/{request_id}` | Logical-call detail (metadata, tokens, cost) and Vercel attempt spans |
 | `GET /api/reconciliation` | Reconciliation completeness, overdue calls, p99 delay, and 99%/2-minute SLO state |
 | `GET /api/models` | Distinct models, last 7 days |
 | `GET /api/tags` | Reconstructed `feature:` / `prompt:` / … tags, last 7 days |

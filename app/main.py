@@ -19,10 +19,8 @@ from app.ch import get_client
 from app.queries import (
     ATTEMPTS_SELECT,
     DETAIL_SELECT,
-    INPUT_MESSAGES_EXPR,
     LIST_SELECT,
     MODEL_EXPR,
-    OUTPUT_TEXT_EXPR,
     RAW_CALL_ID_EXPR,
     SERVICE_FILTER,
     STATUS_EXPR,
@@ -126,8 +124,10 @@ async def list_calls(
         params.update(cel_params)
     if q:
         where.append(
-            f"(positionCaseInsensitive({OUTPUT_TEXT_EXPR}, {{q:String}}) > 0 "
-            f"OR positionCaseInsensitive({INPUT_MESSAGES_EXPR}, {{q:String}}) > 0)"
+            "(positionCaseInsensitive(request_id, {q:String}) > 0 "
+            "OR positionCaseInsensitive(call_id, {q:String}) > 0 "
+            f"OR positionCaseInsensitive({MODEL_EXPR}, {{q:String}}) > 0 "
+            f"OR arrayExists(t -> positionCaseInsensitive(t, {{q:String}}) > 0, {TAGS_EXPR}))"
         )
         params["q"] = q
 

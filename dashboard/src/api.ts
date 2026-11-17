@@ -16,7 +16,6 @@ export type CallRow = {
   latency_ms: number;
   ttft_ms: number;
   tags: string[];
-  output_preview: string;
   reconciliation_status: 'reconciled' | 'cache_hit' | 'legacy' | 'unreconciled';
   is_complete: number;
   reconciliation_overdue: number;
@@ -56,10 +55,6 @@ export type CallDetail = CallRow & {
   max_tokens: number | null;
   presence_penalty: number | null;
   metadata: string;
-  input_messages: string;
-  output_text: string;
-  reasoning_content: string;
-  tool_calls: string;
   call_id: string;
   cloudflare_span_id: string;
   vercel_span_id: string;

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.queries import CEL_FIELD_SQL
+from app.queries import CEL_FIELD_SQL, CONTENT_ATTRIBUTE_KEYS
 
 QUERYABLE_CEL_FIELDS: tuple[str, ...] = (
     *tuple(sorted(CEL_FIELD_SQL.keys())),
@@ -312,7 +312,7 @@ class _CelToSqlCompiler:
                 raise ValueError("has(...) expects a field reference")
             if len(arg.parts) < 2 or arg.parts[0] != "metadata":
                 raise ValueError("has(...) only supports metadata.* paths")
-            path = ".".join(arg.parts[1:])
+            path = _checked_metadata_path(arg.parts)
             key = self._bind("meta_key", "String", path)
             return f"(mapContains(SpanAttributes, {key}) AND SpanAttributes[{key}] != '')", "bool"
 
@@ -415,7 +415,7 @@ class _CelToSqlCompiler:
             return {"kind": "literal", "value": node.value}
         if isinstance(node, _FieldRef):
             if len(node.parts) >= 2 and node.parts[0] == "metadata":
-                return {"kind": "metadata", "path": ".".join(node.parts[1:])}
+                return {"kind": "metadata", "path": _checked_metadata_path(node.parts)}
             name = node.parts[0] if len(node.parts) == 1 else ""
             if name not in CEL_FIELD_SQL:
                 raise ValueError(f"unknown field: {'.'.join(node.parts)}")
@@ -428,6 +428,13 @@ class _CelToSqlCompiler:
         self._counter += 1
         self.params[name] = value
         return f"{{{name}:{ch_type}}}"
+
+
+def _checked_metadata_path(parts: tuple[str, ...]) -> str:
+    path = ".".join(parts[1:])
+    if path in CONTENT_ATTRIBUTE_KEYS:
+        raise ValueError(f"metadata.{path} is message content and is not stored")
+    return path
 
 
 def _flip_compare(op: str) -> str:
